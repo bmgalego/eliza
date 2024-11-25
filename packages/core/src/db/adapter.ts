@@ -8,7 +8,7 @@ import {
     type UUID,
     Participant,
     IDatabaseAdapter,
-} from "./types.ts";
+} from "../types.ts";
 
 /**
  * An abstract class representing a database adapter for managing various entities
@@ -19,6 +19,35 @@ export abstract class DatabaseAdapter<DB = any> implements IDatabaseAdapter {
      * The database instance.
      */
     db: DB;
+
+    //     /**
+    //      * Establish a connection to the database
+    //      */
+    //     abstract connect?(): Promise<void>;
+
+    //     /**
+    //      * Close the database connection
+    //      */
+    //     abstract disconnect?(): Promise<void>;
+
+    //     /**
+    //    * Execute a raw SQL query
+    //    * @param query SQL query to execute
+    //    */
+    //     abstract executeQuery(query: string): Promise<any>;
+
+    //     /**
+    //      * Run a specific migration
+    //      * @param migrationPath Path to the migration file
+    //      */
+    //     abstract runMigration(migrationPath: string): Promise<void>;
+
+    //     /**
+    //      * Check if a specific migration has been applied
+    //      * @param migrationName Name of the migration to check
+    //      */
+    //     abstract checkMigrationApplied(migrationName: string): Promise<boolean>;
+
     /**
      * Retrieves an account by its ID.
      * @param userId The UUID of the user account to retrieve.
