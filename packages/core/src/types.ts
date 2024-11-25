@@ -886,7 +886,7 @@ export interface IMemoryManager {
         opts: {
             match_threshold?: number;
             count?: number;
-            roomId: UUID;
+            roomId?: UUID;
             unique?: boolean;
         }
     ): Promise<Memory[]>;
