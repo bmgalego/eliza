@@ -1,6 +1,6 @@
 export * from "./actions.ts";
 export * from "./context.ts";
-export * from "./database.ts";
+export * from "./database/index.ts";
 export * from "./defaultCharacter.ts";
 export * from "./embedding.ts";
 export * from "./evaluators.ts";

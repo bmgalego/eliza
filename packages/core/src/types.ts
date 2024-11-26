@@ -617,7 +617,7 @@ export type Character = {
         twitterSearchTemplate?: string;
         twitterPostTemplate?: string;
         twitterMessageHandlerTemplate?: string;
-        twitterShouldRespondTemplate?: string;
+        twitterShouldRespondTemplate?: string
         telegramMessageHandlerTemplate?: string;
         telegramShouldRespondTemplate?: string;
         discordVoiceHandlerTemplate?: string;
@@ -704,6 +704,29 @@ export interface IDatabaseAdapter {
 
     /** Optional initialization */
     init?(): Promise<void>;
+
+    /** Establish a connection to the database */
+    connect?(): Promise<void>;
+
+    /* Close the database connection */
+    disconnect?(): Promise<void>;
+
+    /**
+     * Create migrations tracking table if not exists
+     */
+    createMigrationsTable(): Promise<void>;
+
+    /**
+    * Run a specific migration
+    * @param migrationPath Path to the migration file
+    */
+    runMigration(migrationPath: string): Promise<void>;
+
+    /**
+     * Check if a specific migration has been applied
+     * @param migrationName Name of the migration to check
+     */
+    checkMigrationApplied(migrationName: string): Promise<boolean>;
 
     /** Get account by ID */
     getAccountById(userId: UUID): Promise<Account | null>;

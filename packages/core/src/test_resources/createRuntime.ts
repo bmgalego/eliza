@@ -4,7 +4,7 @@ import {
 } from "@ai16z/adapter-sqlite";
 import { SqlJsDatabaseAdapter } from "@ai16z/adapter-sqljs";
 import { SupabaseDatabaseAdapter } from "@ai16z/adapter-supabase";
-import { DatabaseAdapter } from "../database.ts";
+import { DatabaseAdapter } from "../database/index.ts";
 import { getEndpoint } from "../models.ts";
 import { AgentRuntime } from "../runtime.ts";
 import { Action, Evaluator, ModelProviderName, Provider } from "../types.ts";
