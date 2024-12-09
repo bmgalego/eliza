@@ -171,7 +171,7 @@ export class AgentRuntime implements IAgentRuntime {
         return serviceInstance as T;
     }
 
-    async registerService(service: Service): Promise<void> {
+    registerService(service: Service): void {
         const serviceType = service.serviceType;
         elizaLogger.log("Registering service:", serviceType);
 
@@ -240,16 +240,6 @@ export class AgentRuntime implements IAgentRuntime {
             opts?.agentId ??
             stringToUuid(opts.character?.name ?? uuidv4());
         this.character = opts.character || defaultCharacter;
-
-        // By convention, we create a user and room using the agent id.
-        // Memories related to it are considered global context for the agent.
-        this.ensureRoomExists(this.agentId);
-        this.ensureUserExists(
-            this.agentId,
-            this.character.name,
-            this.character.name
-        );
-        this.ensureParticipantExists(this.agentId, this.agentId);
 
         elizaLogger.success("Agent ID", this.agentId);
 
@@ -394,7 +384,22 @@ export class AgentRuntime implements IAgentRuntime {
                 await Promise.all(
                     plugin.services?.map((service) => service.initialize(this))
                 );
+
+            if (plugin.clients)
+                await Promise.all(
+                    plugin.clients?.map((client) => client.start(this))
+                );
         }
+
+        // By convention, we create a user and room using the agent id.
+        // Memories related to it are considered global context for the agent.
+        await this.ensureRoomExists(this.agentId);
+        await this.ensureUserExists(
+            this.agentId,
+            this.character.name,
+            this.character.name
+        );
+        await this.ensureParticipantExists(this.agentId, this.agentId);
 
         if (
             this.character &&
