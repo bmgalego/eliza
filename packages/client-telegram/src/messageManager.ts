@@ -460,7 +460,7 @@ export class MessageManager {
                                     this.runtime.agentId
                             ),
                             agentId,
-                            userId,
+                            userId: this.runtime.agentId,
                             roomId,
                             content: {
                                 ...content,
@@ -497,9 +497,16 @@ export class MessageManager {
                     state,
                     callback
                 );
-            }
 
-            await this.runtime.evaluate(memory, state, shouldRespond);
+                await this.runtime.evaluate(
+                    memory,
+                    state,
+                    shouldRespond,
+                    callback
+                );
+            } else {
+                await this.runtime.evaluate(memory, state, shouldRespond);
+            }
         } catch (error) {
             elizaLogger.error("❌ Error handling message:", error);
             elizaLogger.error("Error sending message:", error);

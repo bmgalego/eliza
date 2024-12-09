@@ -161,7 +161,7 @@ export class TokenProvider {
     async fetchTokenCodex(): Promise<TokenCodex> {
         try {
             const cacheKey = `token_${this.tokenAddress}`;
-            const cachedData = this.getCachedData<TokenCodex>(cacheKey);
+            const cachedData = await this.getCachedData<TokenCodex>(cacheKey);
             if (cachedData) {
                 console.log(
                     `Returning cached token data for ${this.tokenAddress}.`
@@ -215,7 +215,7 @@ export class TokenProvider {
                 throw new Error(`No data returned for token ${tokenAddress}`);
             }
 
-            this.setCachedData(cacheKey, token);
+            await this.setCachedData(cacheKey, token);
 
             return {
                 id: token.id,
@@ -242,7 +242,7 @@ export class TokenProvider {
     async fetchPrices(): Promise<Prices> {
         try {
             const cacheKey = "prices";
-            const cachedData = this.getCachedData<Prices>(cacheKey);
+            const cachedData = await this.getCachedData<Prices>(cacheKey);
             if (cachedData) {
                 console.log("Returning cached prices.");
                 return cachedData;
@@ -255,30 +255,36 @@ export class TokenProvider {
                 ethereum: { usd: "0" },
             };
 
-            for (const token of tokens) {
-                const response = await this.fetchWithRetry(
-                    `${PROVIDER_CONFIG.BIRDEYE_API}/defi/price?address=${token}`,
-                    {
-                        headers: {
-                            "x-chain": "solana",
-                        },
-                    }
-                );
+            prices.solana.usd = "250";
+            prices.bitcoin.usd = "100000";
+            prices.ethereum.usd = "4000";
 
-                if (response?.data?.value) {
-                    const price = response.data.value.toString();
-                    prices[
-                        token === SOL
-                            ? "solana"
-                            : token === BTC
-                              ? "bitcoin"
-                              : "ethereum"
-                    ].usd = price;
-                } else {
-                    console.warn(`No price data available for token: ${token}`);
-                }
-            }
-            this.setCachedData(cacheKey, prices);
+            // TODO: use coingecko for this
+
+            // for (const token of tokens) {
+            //     const response = await this.fetchWithRetry(
+            //         `${PROVIDER_CONFIG.BIRDEYE_API}/defi/price?address=${token}`,
+            //         {
+            //             headers: {
+            //                 "x-chain": "solana",
+            //             },
+            //         }
+            //     );
+
+            //     if (response?.data?.value) {
+            //         const price = response.data.value.toString();
+            //         prices[
+            //             token === SOL
+            //                 ? "solana"
+            //                 : token === BTC
+            //                   ? "bitcoin"
+            //                   : "ethereum"
+            //         ].usd = price;
+            //     } else {
+            //         console.warn(`No price data available for token: ${token}`);
+            //     }
+            // }
+            await this.setCachedData(cacheKey, prices);
             return prices;
         } catch (error) {
             console.error("Error fetching prices:", error);
@@ -288,6 +294,8 @@ export class TokenProvider {
     async calculateBuyAmounts(): Promise<CalculatedBuyAmounts> {
         const dexScreenerData = await this.fetchDexScreenerData();
         const prices = await this.fetchPrices();
+        console.log({ prices, dexScreenerData });
+
         const solPrice = toBN(prices.solana.usd);
 
         if (!dexScreenerData || dexScreenerData.pairs.length === 0) {
@@ -339,7 +347,8 @@ export class TokenProvider {
 
     async fetchTokenSecurity(): Promise<TokenSecurityData> {
         const cacheKey = `tokenSecurity_${this.tokenAddress}`;
-        const cachedData = this.getCachedData<TokenSecurityData>(cacheKey);
+        const cachedData =
+            await this.getCachedData<TokenSecurityData>(cacheKey);
         if (cachedData) {
             console.log(
                 `Returning cached token security data for ${this.tokenAddress}.`
@@ -361,7 +370,7 @@ export class TokenProvider {
             top10HolderBalance: data.data.top10HolderBalance,
             top10HolderPercent: data.data.top10HolderPercent,
         };
-        this.setCachedData(cacheKey, security);
+        await this.setCachedData(cacheKey, security);
         console.log(`Token security data cached for ${this.tokenAddress}.`);
 
         return security;
@@ -369,7 +378,7 @@ export class TokenProvider {
 
     async fetchTokenTradeData(): Promise<TokenTradeData> {
         const cacheKey = `tokenTradeData_${this.tokenAddress}`;
-        const cachedData = this.getCachedData<TokenTradeData>(cacheKey);
+        const cachedData = await this.getCachedData<TokenTradeData>(cacheKey);
         if (cachedData) {
             console.log(
                 `Returning cached token trade data for ${this.tokenAddress}.`
@@ -598,13 +607,13 @@ export class TokenProvider {
             volume_sell_24h_change_percent:
                 data.data.volume_sell_24h_change_percent,
         };
-        this.setCachedData(cacheKey, tradeData);
+        await this.setCachedData(cacheKey, tradeData);
         return tradeData;
     }
 
     async fetchDexScreenerData(): Promise<DexScreenerData> {
         const cacheKey = `dexScreenerData_${this.tokenAddress}`;
-        const cachedData = this.getCachedData<DexScreenerData>(cacheKey);
+        const cachedData = await this.getCachedData<DexScreenerData>(cacheKey);
         if (cachedData) {
             console.log("Returning cached DexScreener data.");
             return cachedData;
@@ -631,7 +640,7 @@ export class TokenProvider {
             };
 
             // Cache the result
-            this.setCachedData(cacheKey, dexData);
+            await this.setCachedData(cacheKey, dexData);
 
             return dexData;
         } catch (error) {
@@ -673,7 +682,7 @@ export class TokenProvider {
             };
 
             // Cache the result
-            this.setCachedData(cacheKey, dexData);
+            await this.setCachedData(cacheKey, dexData);
 
             // Return the pair with the highest liquidity and market cap
             return this.getHighestLiquidityPair(dexData);
@@ -745,7 +754,7 @@ export class TokenProvider {
 
     async fetchHolderList(): Promise<HolderData[]> {
         const cacheKey = `holderList_${this.tokenAddress}`;
-        const cachedData = this.getCachedData<HolderData[]>(cacheKey);
+        const cachedData = await this.getCachedData<HolderData[]>(cacheKey);
         if (cachedData) {
             console.log("Returning cached holder list.");
             return cachedData;
@@ -832,7 +841,7 @@ export class TokenProvider {
             console.log(`Total unique holders fetched: ${holders.length}`);
 
             // Cache the result
-            this.setCachedData(cacheKey, holders);
+            await this.setCachedData(cacheKey, holders);
 
             return holders;
         } catch (error) {
@@ -896,11 +905,13 @@ export class TokenProvider {
                 `Fetching security data for token: ${this.tokenAddress}`
             );
             const security = await this.fetchTokenSecurity();
-
+            console.log({ security });
             const tokenCodex = await this.fetchTokenCodex();
+            console.log({ tokenCodex });
 
             console.log(`Fetching trade data for token: ${this.tokenAddress}`);
             const tradeData = await this.fetchTokenTradeData();
+            console.log({ tradeData });
 
             console.log(
                 `Fetching DexScreener data for token: ${this.tokenAddress}`
@@ -962,6 +973,8 @@ export class TokenProvider {
     async shouldTradeToken(): Promise<boolean> {
         try {
             const tokenData = await this.getProcessedTokenData();
+
+            console.dir({ tokenData }, { depth: Infinity });
             const { tradeData, security, dexScreenerData } = tokenData;
             const { ownerBalance, creatorBalance } = security;
             const { liquidity, marketCap } = dexScreenerData.pairs[0];

@@ -10,12 +10,24 @@ import {
     Memory,
     ModelClass,
     Evaluator,
+    State,
+    HandlerCallback,
+    UUID,
 } from "@ai16z/eliza";
 import { TrustScoreManager } from "../providers/trustScoreProvider.ts";
 import { TokenProvider } from "../providers/token.ts";
 import { WalletProvider } from "../providers/wallet.ts";
 import { TrustScoreDatabase } from "@ai16z/plugin-trustdb";
 import { Connection, PublicKey } from "@solana/web3.js";
+import { v4 as uuid } from "uuid";
+type Recomendation = {
+    recommender: string;
+    ticker: string | null;
+    contractAddress: string | null;
+    type: "buy" | "dont_buy" | "sell" | "dont_sell";
+    conviction: "none" | "low" | "medium" | "high";
+    alreadyKnown: boolean;
+};
 
 const shouldProcessTemplate =
     `# Task: Decide if the recent messages should be processed for token recommendations.
@@ -32,11 +44,13 @@ const shouldProcessTemplate =
     Should the messages be processed for recommendations? ` + booleanFooter;
 
 export const formatRecommendations = (recommendations: Memory[]) => {
-    const messageStrings = recommendations
+    return recommendations
         .reverse()
-        .map((rec: Memory) => `${(rec.content as Content)?.content}`);
-    const finalMessageStrings = messageStrings.join("\n");
-    return finalMessageStrings;
+        .map(
+            (rec: Memory) =>
+                `${JSON.stringify(rec.content.recomendation as Recomendation)}`
+        )
+        .join("\n");
 };
 
 const recommendationTemplate = `TASK: Extract recommendations to buy or sell memecoins from the conversation as an array of objects in JSON format.
@@ -77,9 +91,17 @@ Response should be a JSON object array inside a JSON markdown block. Correct res
 ]
 \`\`\``;
 
-async function handler(runtime: IAgentRuntime, message: Memory) {
+async function handler(
+    runtime: IAgentRuntime,
+    message: Memory,
+    state?: State,
+    options?: { [key: string]: unknown },
+    callback?: HandlerCallback
+) {
     console.log("Evaluating for trust");
-    const state = await runtime.composeState(message);
+    state = state
+        ? await runtime.composeState(message)
+        : await runtime.updateRecentMessageState(state);
 
     const { agentId, roomId } = state;
 
@@ -121,13 +143,17 @@ async function handler(runtime: IAgentRuntime, message: Memory) {
         template: recommendationTemplate,
     });
 
-    const recommendations = await generateObjectArray({
+    console.log({
+        recomendContext: context,
+    });
+
+    const recommendations: Recomendation[] = await generateObjectArray({
         runtime,
         context,
         modelClass: ModelClass.LARGE,
     });
 
-    console.log("recommendations", recommendations);
+    console.log("recommendations", { recommendations });
 
     if (!recommendations) {
         return [];
@@ -144,40 +170,61 @@ async function handler(runtime: IAgentRuntime, message: Memory) {
         );
     });
 
-    for (const rec of filteredRecommendations) {
-        // create the wallet provider and token provider
-        const walletProvider = new WalletProvider(
-            new Connection(
-                runtime.getSetting("RPC_URL") ||
-                    "https://api.mainnet-beta.solana.com"
-            ),
-            new PublicKey(
-                runtime.getSetting("SOLANA_PUBLIC_KEY") ??
-                    runtime.getSetting("WALLET_PUBLIC_KEY")
-            )
-        );
+    if (filteredRecommendations.length === 0) {
+        return [];
+    }
+
+    // create the wallet provider and token provider
+    const walletProvider = new WalletProvider(
+        new Connection(
+            runtime.getSetting("RPC_URL") ||
+                "https://api.mainnet-beta.solana.com"
+        ),
+        new PublicKey(
+            runtime.getSetting("SOLANA_PUBLIC_KEY") ??
+                runtime.getSetting("WALLET_PUBLIC_KEY")
+        )
+    );
+
+    const trustScoreDb = new TrustScoreDatabase(runtime.databaseAdapter.db);
+
+    // get actors from the database
+    const participants = await runtime.databaseAdapter.getParticipantsForRoom(
+        message.roomId
+    );
+
+    // TODO: getAccounts in database
+    const users = await Promise.all(
+        participants.map((id) => runtime.databaseAdapter.getAccountById(id))
+    );
+
+    for (const recomendation of filteredRecommendations) {
         const tokenProvider = new TokenProvider(
-            rec.contractAddress,
+            recomendation.contractAddress,
             walletProvider,
             runtime.cacheManager
         );
 
         // TODO: Check to make sure the contract address is valid, it's the right one, etc
 
-        //
-        if (!rec.contractAddress) {
+        if (!recomendation.contractAddress) {
+            // this is dangerous someone can send a token with same symbol and more supply
             const tokenAddress = await tokenProvider.getTokenFromWallet(
                 runtime,
-                rec.ticker
+                recomendation.ticker
             );
-            rec.contractAddress = tokenAddress;
+
+            recomendation.contractAddress = tokenAddress;
+
             if (!tokenAddress) {
                 // try to search for the symbol and return the contract address with they highest liquidity and market cap
                 const result = await tokenProvider.searchDexScreenerData(
-                    rec.ticker
+                    recomendation.ticker
                 );
+
                 const tokenAddress = result?.baseToken?.address;
-                rec.contractAddress = tokenAddress;
+                recomendation.contractAddress = tokenAddress;
+
                 if (!tokenAddress) {
                     console.warn("Could not find contract address for token");
                     continue;
@@ -186,56 +233,52 @@ async function handler(runtime: IAgentRuntime, message: Memory) {
         }
 
         // create the trust score manager
-
-        const trustScoreDb = new TrustScoreDatabase(runtime.databaseAdapter.db);
         const trustScoreManager = new TrustScoreManager(
             runtime,
             tokenProvider,
             trustScoreDb
         );
 
-        // get actors from the database
-        const participants =
-            await runtime.databaseAdapter.getParticipantsForRoom(
-                message.roomId
-            );
-
         // find the first user Id from a user with the username that we extracted
-        const user = participants.find(async (actor) => {
-            const user = await runtime.databaseAdapter.getAccountById(actor);
+        const user = users.find(async (user) => {
             return (
                 user.name.toLowerCase().trim() ===
-                rec.recommender.toLowerCase().trim()
+                recomendation.recommender.toLowerCase().trim()
             );
         });
 
         if (!user) {
-            console.warn("Could not find user: ", rec.recommender);
+            console.warn("Could not find user: ", recomendation.recommender);
             continue;
         }
 
-        const account = await runtime.databaseAdapter.getAccountById(user);
-        const userId = account.id;
-
-        const recMemory = {
-            userId,
+        const recMemory: Memory = {
+            id: uuid() as UUID,
+            userId: user.id,
             agentId,
-            content: { text: JSON.stringify(rec) },
+            content: { text: "", recomendation },
             roomId,
             createdAt: Date.now(),
         };
 
         await recommendationsManager.createMemory(recMemory, true);
 
-        console.log("recommendationsManager", rec);
+        console.log("recommendationsManager", recomendation);
 
-        // - from here we just need to make sure code is right
+        await callback({
+            text: "new recomendation:\n" + formatRecommendations([recMemory]),
+        });
 
+        // from here we just need to make sure code is right
         // buy, dont buy, sell, dont sell
 
         const buyAmounts = await tokenProvider.calculateBuyAmounts();
 
-        let buyAmount = buyAmounts[rec.conviction.toLowerCase().trim()];
+        console.log({ buyAmounts });
+
+        let buyAmount =
+            buyAmounts[recomendation.conviction.toLowerCase().trim()];
+
         if (!buyAmount) {
             // handle annoying cases
             // for now just put in 10 sol
@@ -245,6 +288,8 @@ async function handler(runtime: IAgentRuntime, message: Memory) {
         // TODO: is this is a buy, sell, dont buy, or dont sell?
         const shouldTrade = await tokenProvider.shouldTradeToken();
 
+        console.log({ shouldTrade });
+
         if (!shouldTrade) {
             console.warn(
                 "There might be a problem with the token, not trading"
@@ -252,19 +297,19 @@ async function handler(runtime: IAgentRuntime, message: Memory) {
             continue;
         }
 
-        switch (rec.type) {
+        switch (recomendation.type) {
+            // for now, lets just assume buy only, but we should implement
+            // await trustScoreManager.createTradePerformance(
+            //     runtime,
+            //     recomendation.contractAddress,
+            //     user.id,
+            //     {
+            //         buy_amount: buyAmount,
+            //         is_simulation: true,
+            //     }
+            // );
+            // break;
             case "buy":
-                // for now, lets just assume buy only, but we should implement
-                await trustScoreManager.createTradePerformance(
-                    runtime,
-                    rec.contractAddress,
-                    userId,
-                    {
-                        buy_amount: rec.buyAmount,
-                        is_simulation: true,
-                    }
-                );
-                break;
             case "sell":
             case "dont_sell":
             case "dont_buy":
@@ -288,6 +333,12 @@ export const trustEvaluator: Evaluator = {
         runtime: IAgentRuntime,
         message: Memory
     ): Promise<boolean> => {
+        console.log(
+            "validating message for recommendation",
+            message.content.text.length < 5
+                ? false
+                : message.userId !== message.agentId
+        );
         if (message.content.text.length < 5) {
             return false;
         }
@@ -296,7 +347,14 @@ export const trustEvaluator: Evaluator = {
     },
     description:
         "Extract recommendations to buy or sell memecoins/tokens from the conversation, including details like ticker, contract address, conviction level, and recommender username.",
-    handler,
+    async handler(runtime, message, state, options, callback) {
+        try {
+            await handler(runtime, message, state, options, callback);
+        } catch (error) {
+            console.error(error);
+            throw error;
+        }
+    },
     examples: [
         {
             context: `Actors in the scene:

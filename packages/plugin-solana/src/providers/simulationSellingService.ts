@@ -63,11 +63,11 @@ export class SimulationSellingService {
      */
     private async initializeRabbitMQ(amqpUrl: string) {
         try {
-            this.amqpConnection = await amqp.connect(amqpUrl);
-            this.amqpChannel = await this.amqpConnection.createChannel();
-            console.log("Connected to RabbitMQ");
-            // Start consuming messages
-            this.consumeMessages();
+            // this.amqpConnection = await amqp.connect(amqpUrl);
+            // this.amqpChannel = await this.amqpConnection.createChannel();
+            // console.log("Connected to RabbitMQ");
+            // // Start consuming messages
+            // this.consumeMessages();
         } catch (error) {
             console.error("Failed to connect to RabbitMQ:", error);
         }

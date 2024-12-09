@@ -112,11 +112,21 @@ export class WalletProvider {
             const cacheKey = `portfolio-${this.walletPublicKey.toBase58()}`;
             const cachedValue = this.cache.get<WalletPortfolio>(cacheKey);
 
+            const portfolio = {
+                totalUsd: "0",
+                totalSol: "0",
+                items: [],
+            };
+
             if (cachedValue) {
                 console.log("Cache hit for fetchPortfolioValue");
                 return cachedValue;
             }
-            console.log("Cache miss for fetchPortfolioValue");
+
+            console.log(
+                "Cache miss for fetchPortfolioValue",
+                this.walletPublicKey.toBase58()
+            );
 
             const walletData = await this.fetchWithRetry(
                 runtime,
@@ -145,15 +155,14 @@ export class WalletProvider {
             }));
 
             const totalSol = totalUsd.div(solPriceInUSD);
-            const portfolio = {
-                totalUsd: totalUsd.toString(),
-                totalSol: totalSol.toFixed(6),
-                items: items.sort((a, b) =>
-                    new BigNumber(b.valueUsd)
-                        .minus(new BigNumber(a.valueUsd))
-                        .toNumber()
-                ),
-            };
+            portfolio.totalUsd = totalUsd.toString();
+            portfolio.totalSol = totalSol.toFixed(6);
+            portfolio.items = items.sort((a, b) =>
+                new BigNumber(b.valueUsd)
+                    .minus(new BigNumber(a.valueUsd))
+                    .toNumber()
+            );
+
             this.cache.set(cacheKey, portfolio);
             return portfolio;
         } catch (error) {
@@ -165,7 +174,7 @@ export class WalletProvider {
     async fetchPortfolioValueCodex(runtime): Promise<WalletPortfolio> {
         try {
             const cacheKey = `portfolio-${this.walletPublicKey.toBase58()}`;
-            const cachedValue = await this.cache.get<WalletPortfolio>(cacheKey);
+            const cachedValue = this.cache.get<WalletPortfolio>(cacheKey);
 
             if (cachedValue) {
                 console.log("Cache hit for fetchPortfolioValue");
@@ -250,7 +259,7 @@ export class WalletProvider {
             };
 
             // Cache the portfolio for future requests
-            await this.cache.set(cacheKey, portfolio, 60 * 1000); // Cache for 1 minute
+            this.cache.set(cacheKey, portfolio, 60 * 1000); // Cache for 1 minute
 
             return portfolio;
         } catch (error) {
