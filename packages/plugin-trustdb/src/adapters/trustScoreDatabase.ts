@@ -146,12 +146,22 @@ export class TrustScoreDatabase {
         this.db = db;
         // load(db);
         // check if the tables exist, if not create them
-        const tables = this.db
+        const requiredTables = [
+            "recommenders",
+            "recommender_metrics",
+            "token_performance",
+            "token_recommendations",
+            "recommender_metrics_history",
+            "trade",
+            "simulation_trade",
+            "transactions",
+        ];
+        const existingTables = this.db
             .prepare(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('recommenders', 'recommender_metrics', 'token_performance', 'token_recommendations', 'recommender_metrics_history');"
+                `SELECT name FROM sqlite_master WHERE type='table' AND name IN (${requiredTables.map(() => "?").join(",")});`
             )
-            .all();
-        if (tables.length !== 5) {
+            .all(...requiredTables);
+        if (existingTables.length !== requiredTables.length) {
             this.initializeSchema();
         }
     }
@@ -724,6 +734,7 @@ export class TrustScoreDatabase {
         const sql = `
             INSERT INTO token_performance (
                 token_address,
+                symbol,
                 price_change_24h,
                 volume_change_24h,
                 trade_24h_change,
@@ -740,8 +751,9 @@ export class TrustScoreDatabase {
                 balance,
                 initial_market_cap,
                 last_updated
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            )  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(token_address) DO UPDATE SET
+                symbol = excluded.symbol,
                 price_change_24h = excluded.price_change_24h,
                 volume_change_24h = excluded.volume_change_24h,
                 trade_24h_change = excluded.trade_24h_change,
@@ -764,6 +776,7 @@ export class TrustScoreDatabase {
                 .prepare(sql)
                 .run(
                     performance.tokenAddress,
+                    performance.symbol,
                     performance.priceChange24h,
                     performance.volumeChange24h,
                     performance.trade_24h_change,
@@ -927,7 +940,8 @@ export class TrustScoreDatabase {
                     recommendation.id || uuidv4(),
                     recommendation.recommenderId,
                     recommendation.tokenAddress,
-                    recommendation.timestamp || new Date(),
+                    recommendation.timestamp.toISOString() ||
+                        new Date().toISOString(),
                     recommendation.initialMarketCap || null,
                     recommendation.initialLiquidity || null,
                     recommendation.initialPrice || null
