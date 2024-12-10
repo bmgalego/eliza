@@ -751,7 +751,7 @@ export class TrustScoreDatabase {
                 balance,
                 initial_market_cap,
                 last_updated
-            )  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            )  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(token_address) DO UPDATE SET
                 symbol = excluded.symbol,
                 price_change_24h = excluded.price_change_24h,
