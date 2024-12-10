@@ -65,7 +65,9 @@ These are an examples of the expected output of this task:
 # INSTRUCTIONS
 
 Extract any new recommendations from the conversation that are not already present in the list of known recommendations below:
+# START OF RECOMMENDATIONS
 {{recentRecommendations}}
+# END OF RECOMMENDATIONS
 
 - Include the recommender's username
 - Try not to include already-known recommendations. If you think a recommendation is already known, but you're not sure, respond with alreadyKnown: true.
@@ -138,7 +140,10 @@ async function handler(
     const context = composeContext({
         state: {
             ...state,
-            recentRecommendations: formatRecommendations(recentRecommendations),
+            recentRecommendations:
+                recentRecommendations.length > 0
+                    ? formatRecommendations(recentRecommendations)
+                    : "No recomendations yet",
         },
         template: recommendationTemplate,
     });
