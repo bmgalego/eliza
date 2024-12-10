@@ -740,7 +740,7 @@ export class TrustScoreDatabase {
                 balance,
                 initial_market_cap,
                 last_updated
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ON CONFLICT(token_address) DO UPDATE SET
                 price_change_24h = excluded.price_change_24h,
                 volume_change_24h = excluded.volume_change_24h,
@@ -760,24 +760,26 @@ export class TrustScoreDatabase {
                 last_updated = CURRENT_TIMESTAMP;
         `;
         try {
-            this.db.prepare(sql).run(
-                performance.tokenAddress,
-                performance.priceChange24h,
-                performance.volumeChange24h,
-                performance.trade_24h_change,
-                performance.liquidity,
-                performance.liquidityChange24h,
-                performance.holderChange24h, // Ensure column name matches schema
-                performance.rugPull ? 1 : 0,
-                performance.isScam ? 1 : 0,
-                performance.marketCapChange24h,
-                performance.sustainedGrowth ? 1 : 0,
-                performance.rapidDump ? 1 : 0,
-                performance.suspiciousVolume ? 1 : 0,
-                performance.balance,
-                performance.initialMarketCap,
-                validationTrust
-            );
+            this.db
+                .prepare(sql)
+                .run(
+                    performance.tokenAddress,
+                    performance.priceChange24h,
+                    performance.volumeChange24h,
+                    performance.trade_24h_change,
+                    performance.liquidity,
+                    performance.liquidityChange24h,
+                    performance.holderChange24h,
+                    performance.rugPull ? 1 : 0,
+                    performance.isScam ? 1 : 0,
+                    performance.marketCapChange24h,
+                    performance.sustainedGrowth ? 1 : 0,
+                    performance.rapidDump ? 1 : 0,
+                    performance.suspiciousVolume ? 1 : 0,
+                    validationTrust,
+                    performance.balance,
+                    performance.initialMarketCap
+                );
             console.log(
                 `Upserted token performance for ${performance.tokenAddress}`
             );
@@ -1360,7 +1362,7 @@ export class TrustScoreDatabase {
             price,
             is_simulation,
             timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?);
     `;
         try {
             this.db

@@ -408,12 +408,12 @@ export class TrustScoreManager {
             id: tokenUUId,
             recommenderId: recommenderId,
             tokenAddress: tokenAddress,
-            timestamp: new Date(),
+            timestamp: new Date().toISOString(),
             initialMarketCap:
                 processedData.dexScreenerData.pairs[0]?.marketCap || 0,
             initialLiquidity:
                 processedData.dexScreenerData.pairs[0]?.liquidity?.usd || 0,
-            initialPrice: processedData.tradeData.price,
+            initialPrice: processedData.tradeData.price || 0,
         };
         this.trustScoreDb.addTokenRecommendation(tokenRecommendation);
 
