@@ -299,17 +299,17 @@ async function handler(
 
         switch (recomendation.type) {
             // for now, lets just assume buy only, but we should implement
-            // await trustScoreManager.createTradePerformance(
-            //     runtime,
-            //     recomendation.contractAddress,
-            //     user.id,
-            //     {
-            //         buy_amount: buyAmount,
-            //         is_simulation: true,
-            //     }
-            // );
-            // break;
             case "buy":
+                await trustScoreManager.createTradePerformance(
+                    runtime,
+                    recomendation.contractAddress,
+                    user.id,
+                    {
+                        buy_amount: buyAmount,
+                        is_simulation: true,
+                    }
+                );
+                break;
             case "sell":
             case "dont_sell":
             case "dont_buy":

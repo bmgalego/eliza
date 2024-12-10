@@ -359,7 +359,10 @@ export class TrustScoreManager {
             await this.tokenProvider.getProcessedTokenData();
         const wallet = new WalletProvider(
             this.connection,
-            new PublicKey(Wallet!)
+            new PublicKey(
+                runtime.getSetting("SOLANA_PUBLIC_KEY") ??
+                    runtime.getSetting("WALLET_PUBLIC_KEY")
+            )
         );
 
         let tokensBalance = 0;
@@ -459,7 +462,7 @@ export class TrustScoreManager {
             recommenderId
         );
         // api call to update trade performance
-        this.createTradeInBe(tokenAddress, recommenderId, data);
+        await this.createTradeInBe(tokenAddress, recommenderId, data);
         return creationData;
     }
 
@@ -476,21 +479,19 @@ export class TrustScoreManager {
     ) {
         for (let attempt = 1; attempt <= retries; attempt++) {
             try {
-                await fetch(
-                    `${this.backend}/api/updaters/createTradePerformance`,
-                    {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${this.backendToken}`,
-                        },
-                        body: JSON.stringify({
-                            tokenAddress: tokenAddress,
-                            tradeData: data,
-                            recommenderId: recommenderId,
-                        }),
-                    }
-                );
+                await fetch(`${this.backend}/updaters/createTradePerformance`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${this.backendToken}`,
+                    },
+                    body: JSON.stringify({
+                        tokenAddress: tokenAddress,
+                        buy_amount: data.buy_amount,
+                        recommenderId: recommenderId,
+                        is_simulation: true,
+                    }),
+                });
                 // If the request is successful, exit the loop
                 return;
             } catch (error) {

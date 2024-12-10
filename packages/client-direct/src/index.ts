@@ -226,7 +226,15 @@ export class DirectClient {
 
                 let message = null as Content | null;
 
-                await runtime.evaluate(memory, state);
+                await runtime.evaluate(
+                    memory,
+                    state,
+                    true,
+                    async (newMessages) => {
+                        console.log(newMessages);
+                        return [];
+                    }
+                );
 
                 const _result = await runtime.processActions(
                     memory,
