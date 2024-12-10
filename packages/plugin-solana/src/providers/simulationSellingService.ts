@@ -418,7 +418,6 @@ export class SimulationSellingService {
         this.updateTradeInBe(
             tokenAddress,
             recommender.id,
-            recommender.telegramId,
             sellDetailsData,
             tokenBalance
         );
@@ -443,7 +442,6 @@ export class SimulationSellingService {
     async updateTradeInBe(
         tokenAddress: string,
         recommenderId: string,
-        username: string,
         data: SellDetails,
         balanceLeft: number,
         retries = 3,
@@ -462,10 +460,10 @@ export class SimulationSellingService {
                         body: JSON.stringify({
                             tokenAddress: tokenAddress,
                             tradeData: data,
+                            sell_amount: data.sell_amount,
                             recommenderId: recommenderId,
-                            username: username,
                             isSimulation: true,
-                            balanceLeft: balanceLeft,
+                            // balanceLeft: balanceLeft,
                         }),
                     }
                 );
