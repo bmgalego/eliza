@@ -1387,7 +1387,7 @@ export class TrustScoreDatabase {
                     transaction.type,
                     transaction.amount,
                     transaction.price,
-                    transaction.isSimulation,
+                    transaction.isSimulation ? 1 : 0,
                     transaction.timestamp
                 );
             return true;
