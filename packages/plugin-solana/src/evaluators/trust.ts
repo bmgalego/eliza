@@ -74,6 +74,7 @@ Extract any new recommendations from the conversation that are not already prese
 - Set the conviction to 'none', 'low', 'medium' or 'high'
 - Set the recommendation type to 'buy', 'dont_buy', 'sell', or 'dont_sell'
 - Include the contract address and/or ticker if available
+- Never change the contract address and don't try to fix it! it can include words like pump, meme, etc.
 
 Recent Messages:
 {{recentMessages}}
