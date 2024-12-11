@@ -17,7 +17,7 @@ import {
 import { TrustScoreManager } from "../providers/trustScoreProvider.ts";
 import { TokenProvider } from "../providers/token.ts";
 import { WalletProvider } from "../providers/wallet.ts";
-import { TrustScoreDatabase } from "@ai16z/plugin-trustdb";
+import { Recommender, TrustScoreDatabase } from "@ai16z/plugin-trustdb";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { v4 as uuid } from "uuid";
 type Recomendation = {
@@ -271,7 +271,7 @@ async function handler(
 
         console.log("recommendationsManager", recomendation);
 
-        await callback({
+        await callback?.({
             text: "new recomendation:\n" + formatRecommendations([recMemory]),
         });
 
@@ -303,13 +303,32 @@ async function handler(
             continue;
         }
 
+        const recommender: Recommender = {
+            id: user.id,
+            address: user.username,
+        };
+
+        // TODO: use msg source to determine the client and create recommender
+        // message.content.source
+
+        if (message.content.source === "twitter") {
+            // recommender.twitterId = user.username;
+        }
+
+        await getOrCreateRecommenderInBe(
+            recommender.id,
+            recommender.address,
+            this.backendToken,
+            this.backend
+        );
+
         switch (recomendation.type) {
             // for now, lets just assume buy only, but we should implement
             case "buy":
                 await trustScoreManager.createTradePerformance(
                     runtime,
                     recomendation.contractAddress,
-                    user.id,
+                    recommender,
                     {
                         buy_amount: buyAmount,
                         is_simulation: true,
@@ -605,3 +624,44 @@ None`,
         },
     ],
 };
+
+export async function getOrCreateRecommenderInBe(
+    recommenderId: string,
+    username: string,
+    backendToken: string,
+    backend: string,
+    retries = 3,
+    delayMs = 2000
+) {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const response = await fetch(
+                `${backend}/updaters/getOrCreateRecommender`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${backendToken}`,
+                    },
+                    body: JSON.stringify({
+                        recommenderId: recommenderId,
+                        username: username,
+                    }),
+                }
+            );
+            const data = await response.json();
+            return data;
+        } catch (error) {
+            console.error(
+                `Attempt ${attempt} failed: Error getting or creating recommender in backend`,
+                error
+            );
+            if (attempt < retries) {
+                console.log(`Retrying in ${delayMs} ms...`);
+                await new Promise((resolve) => setTimeout(resolve, delayMs));
+            } else {
+                console.error("All attempts failed.");
+            }
+        }
+    }
+}

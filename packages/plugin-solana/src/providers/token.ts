@@ -212,7 +212,9 @@ export class TokenProvider {
             const token = response.data?.data?.token;
 
             if (!token) {
-                throw new Error(`No data returned for token ${tokenAddress}`);
+                throw new Error(
+                    `No data returned for token ${this.tokenAddress}`
+                );
             }
 
             await this.setCachedData(cacheKey, token);
@@ -1105,9 +1107,6 @@ export class TokenProvider {
     }
 }
 
-const tokenAddress = PROVIDER_CONFIG.TOKEN_ADDRESSES.Example;
-
-const connection = new Connection(PROVIDER_CONFIG.DEFAULT_RPC);
 const tokenProvider: Provider = {
     get: async (
         runtime: IAgentRuntime,
@@ -1115,18 +1114,22 @@ const tokenProvider: Provider = {
         _state?: State
     ): Promise<string> => {
         try {
+            const connection = new Connection(PROVIDER_CONFIG.DEFAULT_RPC);
             const walletProvider = new WalletProvider(
                 connection,
                 new PublicKey(PROVIDER_CONFIG.MAIN_WALLET)
             );
 
+            const tokenAddress = PROVIDER_CONFIG.TOKEN_ADDRESSES.Example;
             const provider = new TokenProvider(
                 tokenAddress,
                 walletProvider,
                 runtime.cacheManager
             );
 
-            return provider.getFormattedTokenReport();
+            const report = await provider.getFormattedTokenReport();
+
+            return report;
         } catch (error) {
             console.error("Error fetching token data:", error);
             return "Unable to fetch token information. Please try again later.";

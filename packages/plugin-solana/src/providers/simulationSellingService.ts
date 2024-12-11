@@ -13,10 +13,17 @@ import { WalletProvider } from "./wallet.ts";
 import * as amqp from "amqplib";
 import { ProcessedTokenData } from "../types/token.ts";
 
-interface SellDetails {
+type SellDetails = {
     sell_amount: number;
     sell_recommender_id: string | null;
-}
+};
+
+// SellDecision interface
+type SellDecision = {
+    tokenPerformance: TokenPerformance;
+    amountToSell: number;
+    sell_recommender_id: string | null;
+};
 
 export class SimulationSellingService {
     private trustScoreDb: TrustScoreDatabase;
@@ -161,7 +168,8 @@ export class SimulationSellingService {
             console.log("Sell order executed successfully", sellDetailsData);
 
             // check if balance is zero and remove token from running processes
-            const balance = this.trustScoreDb.getTokenBalance(tokenAddress);
+            const balance =
+                await this.trustScoreDb.getTokenBalance(tokenAddress);
             if (balance === 0) {
                 this.runningProcesses.delete(tokenAddress);
             }
@@ -210,7 +218,7 @@ export class SimulationSellingService {
             // const shouldTrade = await tokenProvider.shouldTradeToken();
             // if (shouldTrade) {
             const tokenRecommendations: TokenRecommendation[] =
-                this.trustScoreDb.getRecommendationsByToken(
+                await this.trustScoreDb.getRecommendationsByToken(
                     tokenPerformance.tokenAddress
                 );
             const tokenRecommendation: TokenRecommendation =
@@ -232,7 +240,7 @@ export class SimulationSellingService {
         });
     }
 
-    public processTokenPerformance(
+    public async processTokenPerformance(
         tokenAddress: string,
         recommenderId: string
     ) {
@@ -244,7 +252,7 @@ export class SimulationSellingService {
                 return;
             }
             const tokenPerformance =
-                this.trustScoreDb.getTokenPerformance(tokenAddress);
+                await this.trustScoreDb.getTokenPerformance(tokenAddress);
 
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const tokenProvider = new TokenProvider(
@@ -391,7 +399,8 @@ export class SimulationSellingService {
             rapidDump: isRapidDump,
             sell_recommender_id: sellDetails.sell_recommender_id || null,
         };
-        this.trustScoreDb.updateTradePerformanceOnSell(
+
+        await this.trustScoreDb.updateTradePerformanceOnSell(
             tokenAddress,
             recommender.id,
             buyTimeStamp,
@@ -400,9 +409,10 @@ export class SimulationSellingService {
         );
 
         // If the trade is a simulation update the balance
-        const oldBalance = this.trustScoreDb.getTokenBalance(tokenAddress);
+        const oldBalance =
+            await this.trustScoreDb.getTokenBalance(tokenAddress);
         const tokenBalance = oldBalance - sellDetails.sell_amount;
-        this.trustScoreDb.updateTokenBalance(tokenAddress, tokenBalance);
+        await this.trustScoreDb.updateTokenBalance(tokenAddress, tokenBalance);
         // generate some random hash for simulations
         const hash = Math.random().toString(36).substring(7);
         const transaction = {
@@ -414,8 +424,8 @@ export class SimulationSellingService {
             isSimulation: true,
             timestamp: new Date().toISOString(),
         };
-        this.trustScoreDb.addTransaction(transaction);
-        this.updateTradeInBe(
+        await this.trustScoreDb.addTransaction(transaction);
+        await this.updateTradeInBe(
             tokenAddress,
             recommender.id,
             sellDetailsData,
@@ -449,24 +459,21 @@ export class SimulationSellingService {
     ) {
         for (let attempt = 1; attempt <= retries; attempt++) {
             try {
-                await fetch(
-                    `${this.backend}/api/updaters/updateTradePerformance`,
-                    {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            Authorization: `Bearer ${this.backendToken}`,
-                        },
-                        body: JSON.stringify({
-                            tokenAddress: tokenAddress,
-                            tradeData: data,
-                            sell_amount: data.sell_amount,
-                            recommenderId: recommenderId,
-                            isSimulation: true,
-                            // balanceLeft: balanceLeft,
-                        }),
-                    }
-                );
+                await fetch(`${this.backend}/updaters/updateTradePerformance`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${this.backendToken}`,
+                    },
+                    body: JSON.stringify({
+                        tokenAddress: tokenAddress,
+                        tradeData: data,
+                        sell_amount: data.sell_amount,
+                        recommenderId: recommenderId,
+                        isSimulation: true,
+                        // balanceLeft: balanceLeft,
+                    }),
+                });
                 // If the request is successful, exit the loop
                 return;
             } catch (error) {
@@ -483,11 +490,4 @@ export class SimulationSellingService {
             }
         }
     }
-}
-
-// SellDecision interface
-interface SellDecision {
-    tokenPerformance: TokenPerformance;
-    amountToSell: number;
-    sell_recommender_id: string | null;
 }
