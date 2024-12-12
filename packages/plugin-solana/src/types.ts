@@ -1,13 +1,20 @@
-export interface TokenSecurityData {
+import {
+    Recommender,
+    RecommenderMetrics,
+    TokenPerformance,
+} from "@ai16z/plugin-trustdb";
+import { TokenOverview } from "./clients";
+
+export type TokenSecurityData = {
     ownerBalance: string;
     creatorBalance: string;
     ownerPercentage: number;
     creatorPercentage: number;
     top10HolderBalance: string;
     top10HolderPercent: number;
-}
+};
 
-export interface TokenCodex {
+export type TokenCodex = {
     id: string;
     address: string;
     cmcId: number;
@@ -16,12 +23,14 @@ export interface TokenCodex {
     symbol: string;
     totalSupply: string;
     circulatingSupply: string;
-    imageThumbUrl: string;
-    blueCheckmark: boolean;
+    info?: { circulatingSupply: string; imageThumbUrl: string };
+    explorerData?: {
+        blueCheckmark: boolean;
+    };
     isScam: boolean;
-}
+};
 
-export interface TokenTradeData {
+export type TokenTradeData = {
     address: string;
     holder: number;
     market: number;
@@ -206,31 +215,32 @@ export interface TokenTradeData {
     volume_sell_history_24h: number;
     volume_sell_history_24h_usd: number;
     volume_sell_24h_change_percent: number | null;
-}
+};
 
-export interface HolderData {
+export type HolderData = {
     address: string;
     balance: string;
-}
+};
 
-export interface ProcessedTokenData {
+export type ProcessedTokenData = {
+    token: TokenOverview;
     security: TokenSecurityData;
     tradeData: TokenTradeData;
     holderDistributionTrend: string; // 'increasing' | 'decreasing' | 'stable'
-    highValueHolders: Array<{
+    highValueHolders: {
         holderAddress: string;
         balanceUsd: string;
-    }>;
+    }[];
     recentTrades: boolean;
     highSupplyHoldersCount: number;
     dexScreenerData: DexScreenerData;
 
     isDexScreenerListed: boolean;
     isDexScreenerPaid: boolean;
-    tokenCodex: TokenCodex;
-}
+    // tokenCodex: TokenCodex;
+};
 
-export interface DexScreenerPair {
+export type DexScreenerPair = {
     chainId: string;
     dexId: string;
     url: string;
@@ -281,22 +291,78 @@ export interface DexScreenerPair {
     boosts: {
         active: number;
     };
-}
+};
 
-export interface DexScreenerData {
+export type DexScreenerData = {
     schemaVersion: string;
     pairs: DexScreenerPair[];
-}
+};
 
-export interface Prices {
+export type Prices = {
     solana: { usd: string };
     bitcoin: { usd: string };
     ethereum: { usd: string };
-}
+};
 
-export interface CalculatedBuyAmounts {
+export type CalculatedBuyAmounts = {
     none: 0;
     low: number;
     medium: number;
     high: number;
-}
+};
+
+export type WalletPortfolioItem = {
+    name: string;
+    address: string;
+    symbol: string;
+    decimals: number;
+    balance: string;
+    uiAmount: string;
+    priceUsd: string;
+    valueUsd: string;
+    valueSol?: string;
+};
+
+export type WalletPortfolio = {
+    totalUsd: string;
+    totalSol?: string;
+    items: WalletPortfolioItem[];
+};
+
+export type TradeData = {
+    tokenAddress: string;
+    recommender: Recommender;
+    buyAmount: number;
+    timestamp: string;
+    isSimulation: boolean;
+};
+
+export type SellDecision = {
+    tokenPerformance: TokenPerformance;
+    amountToSell: number;
+    recommenderId: string;
+};
+
+export type SellDetails = {
+    tokenAddress: string;
+    amount: number;
+    recommender: Recommender;
+    timestamp: string;
+    isSimulation: boolean;
+};
+
+export type RecommenderData = {
+    recommenderId: string;
+    trustScore: number;
+    riskScore: number;
+    consistencyScore: number;
+    recommenderMetrics: RecommenderMetrics;
+};
+
+export type TokenRecommendationSummary = {
+    tokenAddress: string;
+    averageTrustScore: number;
+    averageRiskScore: number;
+    averageConsistencyScore: number;
+    recommenders: RecommenderData[];
+};

@@ -10,12 +10,11 @@ import {
     VersionedTransaction,
 } from "@solana/web3.js";
 import { settings } from "@ai16z/eliza";
+import { JupiterClient } from "../clients";
+import { SOL_ADDRESS } from "../constants";
 
-const solAddress = settings.SOL_ADDRESS;
 const SLIPPAGE = settings.SLIPPAGE;
-const connection = new Connection(
-    settings.RPC_URL || "https://api.mainnet-beta.solana.com"
-);
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export async function delayedCall<T>(
@@ -58,24 +57,30 @@ export async function getQuote(
     const decimals = await getTokenDecimals(connection, baseToken);
     const adjustedAmount = amount * 10 ** decimals;
 
-    const quoteResponse = await fetch(
-        `https://quote-api.jup.ag/v6/quote?inputMint=${baseToken}&outputMint=${outputToken}&amount=${adjustedAmount}&slippageBps=50`
+    const quoteResponse = await JupiterClient.getQuote(
+        baseToken,
+        outputToken,
+        amount.toString()
     );
-    const swapTransaction = await quoteResponse.json();
-    const swapTransactionBuf = Buffer.from(swapTransaction, "base64");
+
+    // TODO: check this
+    const swapTransactionBuf = Buffer.from(quoteResponse, "base64");
     return new Uint8Array(swapTransactionBuf);
 }
 
 export const executeSwap = async (
+    connection: Connection,
     transaction: VersionedTransaction,
     type: "buy" | "sell"
 ) => {
     try {
         const latestBlockhash: BlockhashWithExpiryBlockHeight =
             await delayedCall(connection.getLatestBlockhash.bind(connection));
+
         const signature = await connection.sendTransaction(transaction, {
             skipPreflight: false,
         });
+
         const confirmation = await connection.confirmTransaction(
             {
                 signature,
@@ -84,6 +89,7 @@ export const executeSwap = async (
             },
             "finalized"
         );
+
         if (confirmation.value.err) {
             console.log("Confirmation error", confirmation.value.err);
 
@@ -106,13 +112,18 @@ export const executeSwap = async (
     }
 };
 
-export const Sell = async (baseMint: PublicKey, wallet: Keypair) => {
+export const Sell = async (
+    connection: Connection,
+    baseMint: PublicKey,
+    wallet: Keypair
+) => {
     try {
         const tokenAta = await delayedCall(
             getAssociatedTokenAddress,
             baseMint,
             wallet.publicKey
         );
+
         const tokenBalInfo: RpcResponseAndContext<TokenAmount> =
             await delayedCall(
                 connection.getTokenAccountBalance.bind(connection),
@@ -125,6 +136,7 @@ export const Sell = async (baseMint: PublicKey, wallet: Keypair) => {
         }
 
         const tokenBalance = tokenBalInfo.value.amount;
+
         if (tokenBalance === "0") {
             console.warn(
                 `No token balance to sell with wallet ${wallet.publicKey}`
@@ -137,6 +149,7 @@ export const Sell = async (baseMint: PublicKey, wallet: Keypair) => {
             tokenBalance,
             "sell"
         );
+
         // simulate the transaction
         if (!sellTransaction) {
             console.log("Failed to get sell transaction");
@@ -148,25 +161,31 @@ export const Sell = async (baseMint: PublicKey, wallet: Keypair) => {
                 connection.simulateTransaction.bind(connection),
                 sellTransaction
             );
+
         if (simulateResult.value.err) {
             console.log("Sell Simulation failed", simulateResult.value.err);
             return null;
         }
 
         // execute the transaction
-        return executeSwap(sellTransaction, "sell");
+        return executeSwap(connection, sellTransaction, "sell");
     } catch (error) {
         console.log(error);
     }
 };
 
-export const Buy = async (baseMint: PublicKey, wallet: Keypair) => {
+export const Buy = async (
+    connection: Connection,
+    baseMint: PublicKey,
+    wallet: Keypair
+) => {
     try {
         const tokenAta = await delayedCall(
             getAssociatedTokenAddress,
             baseMint,
             wallet.publicKey
         );
+
         const tokenBalInfo: RpcResponseAndContext<TokenAmount> =
             await delayedCall(
                 connection.getTokenAccountBalance.bind(connection),
@@ -191,6 +210,7 @@ export const Buy = async (baseMint: PublicKey, wallet: Keypair) => {
             tokenBalance,
             "buy"
         );
+
         // simulate the transaction
         if (!buyTransaction) {
             console.log("Failed to get buy transaction");
@@ -202,13 +222,14 @@ export const Buy = async (baseMint: PublicKey, wallet: Keypair) => {
                 connection.simulateTransaction.bind(connection),
                 buyTransaction
             );
+
         if (simulateResult.value.err) {
             console.log("Buy Simulation failed", simulateResult.value.err);
             return null;
         }
 
         // execute the transaction
-        return executeSwap(buyTransaction, "buy");
+        return executeSwap(connection, buyTransaction, "buy");
     } catch (error) {
         console.log(error);
     }
@@ -240,30 +261,16 @@ export const fetchBuyTransaction = async (
     amount: string
 ) => {
     try {
-        const quoteResponse = await (
-            await fetch(
-                `https://quote-api.jup.ag/v6/quote?inputMint=${solAddress}&outputMint=${baseMint.toBase58()}&amount=${amount}&slippageBps=${SLIPPAGE}`
-            )
-        ).json();
-        const { swapTransaction } = await (
-            await fetch("https://quote-api.jup.ag/v6/swap", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    quoteResponse,
-                    userPublicKey: wallet.publicKey.toString(),
-                    wrapAndUnwrapSol: true,
-                    dynamicComputeUnitLimit: true,
-                    prioritizationFeeLamports: 100000,
-                }),
-            })
-        ).json();
-        if (!swapTransaction) {
-            console.log("Failed to get buy transaction");
-            return null;
-        }
+        const quote = await JupiterClient.getQuote(
+            SOL_ADDRESS,
+            baseMint.toBase58(),
+            amount
+        );
+
+        const { swapTransaction } = await JupiterClient.swap(
+            quote,
+            wallet.publicKey.toString()
+        );
 
         // deserialize the transaction
         const swapTransactionBuf = Buffer.from(swapTransaction, "base64");
@@ -285,32 +292,16 @@ export const fetchSellTransaction = async (
     amount: string
 ) => {
     try {
-        const quoteResponse = await (
-            await fetch(
-                `https://quote-api.jup.ag/v6/quote?inputMint=${baseMint.toBase58()}&outputMint=${solAddress}&amount=${amount}&slippageBps=${SLIPPAGE}`
-            )
-        ).json();
+        const quote = await JupiterClient.getQuote(
+            baseMint.toBase58(),
+            SOL_ADDRESS,
+            amount
+        );
 
-        // get serialized transactions for the swap
-        const { swapTransaction } = await (
-            await fetch("https://quote-api.jup.ag/v6/swap", {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    quoteResponse,
-                    userPublicKey: wallet.publicKey.toString(),
-                    wrapAndUnwrapSol: true,
-                    dynamicComputeUnitLimit: true,
-                    prioritizationFeeLamports: 52000,
-                }),
-            })
-        ).json();
-        if (!swapTransaction) {
-            console.log("Failed to get sell transaction");
-            return null;
-        }
+        const { swapTransaction } = await JupiterClient.swap(
+            quote,
+            wallet.publicKey.toString()
+        );
 
         // deserialize the transaction
         const swapTransactionBuf = Buffer.from(swapTransaction, "base64");

@@ -6,8 +6,6 @@ import {
     VersionedTransaction,
 } from "@solana/web3.js";
 import BigNumber from "bignumber.js";
-import { v4 as uuidv4 } from "uuid";
-import { TrustScoreDatabase } from "@ai16z/plugin-trustdb";
 import {
     ActionExample,
     HandlerCallback,
@@ -20,10 +18,10 @@ import {
     generateObjectDEPRECATED,
     settings,
 } from "@ai16z/eliza";
-import { TokenProvider } from "../providers/token.ts";
-import { TrustScoreManager } from "../providers/trustScoreProvider.ts";
 import { walletProvider, WalletProvider } from "../providers/wallet.ts";
 import { getTokenDecimals } from "./swapUtils.ts";
+import { JupiterClient } from "../clients.ts";
+import { SOL_ADDRESS } from "../constants.ts";
 
 async function swapToken(
     connection: Connection,
@@ -55,49 +53,21 @@ async function swapToken(
             amount: adjustedAmount,
         });
 
-        const quoteResponse = await fetch(
-            `https://quote-api.jup.ag/v6/quote?inputMint=${inputTokenCA}&outputMint=${outputTokenCA}&amount=${adjustedAmount}&slippageBps=50`
+        const quote = await JupiterClient.getQuote(
+            inputTokenCA,
+            outputTokenCA,
+            adjustedAmount.toString()
         );
-        const quoteData = await quoteResponse.json();
 
-        if (!quoteData || quoteData.error) {
-            console.error("Quote error:", quoteData);
-            throw new Error(
-                `Failed to get quote: ${quoteData?.error || "Unknown error"}`
-            );
-        }
+        console.log("Quote received:", { quote });
 
-        console.log("Quote received:", quoteData);
+        const swap = await JupiterClient.swap(
+            quote,
+            walletPublicKey.toString()
+        );
 
-        const swapRequestBody = {
-            quoteResponse: quoteData,
-            userPublicKey: walletPublicKey.toString(),
-            wrapAndUnwrapSol: true,
-            computeUnitPriceMicroLamports: 2000000,
-            dynamicComputeUnitLimit: true,
-        };
-
-        console.log("Requesting swap with body:", swapRequestBody);
-
-        const swapResponse = await fetch("https://quote-api.jup.ag/v6/swap", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(swapRequestBody),
-        });
-
-        const swapData = await swapResponse.json();
-
-        if (!swapData || !swapData.swapTransaction) {
-            console.error("Swap error:", swapData);
-            throw new Error(
-                `Failed to get swap transaction: ${swapData?.error || "No swap transaction returned"}`
-            );
-        }
-
-        console.log("Swap transaction received");
-        return swapData;
+        console.log("Swap transaction received", { swap });
+        return swap;
     } catch (error) {
         console.error("Error in swapToken:", error);
         throw error;
@@ -145,15 +115,9 @@ Respond with a JSON markdown block containing only the extracted values. Use nul
 
 // get all the tokens in the wallet using the wallet provider
 async function getTokensInWallet(runtime: IAgentRuntime) {
-    const walletProvider = new WalletProvider(
-        new Connection("https://api.mainnet-beta.solana.com"),
-        new PublicKey(
-            runtime.getSetting("SOLANA_PUBLIC_KEY") ??
-                runtime.getSetting("WALLET_PUBLIC_KEY")
-        )
-    );
+    const walletInfo =
+        await WalletProvider.createFromRuntime(runtime).fetchPortfolioValue();
 
-    const walletInfo = await walletProvider.fetchPortfolioValue(runtime);
     const items = walletInfo.items;
     return items;
 }
@@ -221,10 +185,11 @@ export const executeSwap: Action = {
 
         // Add SOL handling logic
         if (response.inputTokenSymbol?.toUpperCase() === "SOL") {
-            response.inputTokenCA = settings.SOL_ADDRESS;
+            response.inputTokenCA = SOL_ADDRESS;
         }
+
         if (response.outputTokenSymbol?.toUpperCase() === "SOL") {
-            response.outputTokenCA = settings.SOL_ADDRESS;
+            response.outputTokenCA = SOL_ADDRESS;
         }
 
         // if both contract addresses are set, lets execute the swap
@@ -233,10 +198,12 @@ export const executeSwap: Action = {
             console.log(
                 `Attempting to resolve CA for input token symbol: ${response.inputTokenSymbol}`
             );
+
             response.inputTokenCA = await getTokenFromWallet(
                 runtime,
                 response.inputTokenSymbol
             );
+
             if (response.inputTokenCA) {
                 console.log(`Resolved inputTokenCA: ${response.inputTokenCA}`);
             } else {
@@ -253,10 +220,12 @@ export const executeSwap: Action = {
             console.log(
                 `Attempting to resolve CA for output token symbol: ${response.outputTokenSymbol}`
             );
+
             response.outputTokenCA = await getTokenFromWallet(
                 runtime,
                 response.outputTokenSymbol
             );
+
             if (response.outputTokenCA) {
                 console.log(
                     `Resolved outputTokenCA: ${response.outputTokenCA}`
@@ -266,7 +235,7 @@ export const executeSwap: Action = {
                 const responseMsg = {
                     text: "I need the contract addresses to perform the swap",
                 };
-                callback?.(responseMsg);
+                await callback?.(responseMsg);
                 return true;
             }
         }
@@ -276,7 +245,7 @@ export const executeSwap: Action = {
             const responseMsg = {
                 text: "I need the amount to perform the swap",
             };
-            callback?.(responseMsg);
+            await callback?.(responseMsg);
             return true;
         }
 
@@ -286,19 +255,16 @@ export const executeSwap: Action = {
             const responseMsg = {
                 text: "The amount must be a number",
             };
-            callback?.(responseMsg);
+            await callback?.(responseMsg);
             return true;
         }
         try {
-            const connection = new Connection(
-                "https://api.mainnet-beta.solana.com"
-            );
+            const connection = new Connection(runtime.getSetting("RPC_URL")!);
+
             const walletPublicKey = new PublicKey(
                 runtime.getSetting("SOLANA_PUBLIC_KEY") ??
-                    runtime.getSetting("WALLET_PUBLIC_KEY")
+                    runtime.getSetting("WALLET_PUBLIC_KEY")!
             );
-
-            const provider = new WalletProvider(connection, walletPublicKey);
 
             console.log("Wallet Public Key:", walletPublicKey);
             console.log("inputTokenSymbol:", response.inputTokenCA);
@@ -324,7 +290,7 @@ export const executeSwap: Action = {
             console.log("Preparing to sign transaction...");
             const privateKeyString =
                 runtime.getSetting("SOLANA_PRIVATE_KEY") ??
-                runtime.getSetting("WALLET_PRIVATE_KEY");
+                runtime.getSetting("WALLET_PRIVATE_KEY")!;
 
             // Handle different private key formats
             let secretKey: Uint8Array;
@@ -402,80 +368,46 @@ export const executeSwap: Action = {
                 );
             }
 
-            if (type === "buy") {
-                const tokenProvider = new TokenProvider(
-                    response.outputTokenCA,
-                    provider,
-                    runtime.cacheManager
-                );
-                const module = await import("better-sqlite3");
-                const Database = module.default;
-                const trustScoreDb = new TrustScoreDatabase(
-                    new Database(":memory:")
-                );
-                // add or get recommender
-                const uuid = uuidv4();
-                const recommender = await trustScoreDb.getOrCreateRecommender({
-                    id: uuid,
-                    address: walletPublicKey.toString(),
-                    solanaPubkey: walletPublicKey.toString(),
-                });
+            // TODO: use real db?
 
-                const trustScoreDatabase = new TrustScoreManager(
-                    runtime,
-                    tokenProvider,
-                    trustScoreDb
-                );
-                // save the trade
-                const tradeData = {
-                    buy_amount: response.amount,
-                    is_simulation: false,
-                };
-                await trustScoreDatabase.createTradePerformance(
-                    runtime,
-                    response.outputTokenCA,
-                    recommender.id,
-                    tradeData
-                );
-            } else if (type === "sell") {
-                const tokenProvider = new TokenProvider(
-                    response.inputTokenCA,
-                    provider,
-                    runtime.cacheManager
-                );
-                const module = await import("better-sqlite3");
-                const Database = module.default;
-                const trustScoreDb = new TrustScoreDatabase(
-                    new Database(":memory:")
-                );
-                // add or get recommender
-                const uuid = uuidv4();
-                const recommender = await trustScoreDb.getOrCreateRecommender({
-                    id: uuid,
-                    address: walletPublicKey.toString(),
-                    solanaPubkey: walletPublicKey.toString(),
-                });
+            // const module = await import("better-sqlite3");
+            // const Database = module.default;
+            // const trustScoreDb = new TrustScoreDatabase(
+            //     new Database(":memory:")
+            // );
 
-                const trustScoreDatabase = new TrustScoreManager(
-                    runtime,
-                    tokenProvider,
-                    trustScoreDb
-                );
-                // save the trade
-                const sellDetails = {
-                    sell_amount: response.amount,
-                    sell_recommender_id: recommender.id,
-                };
-                const sellTimeStamp = new Date().getTime().toString();
-                await trustScoreDatabase.updateSellDetails(
-                    runtime,
-                    response.inputTokenCA,
-                    recommender.id,
-                    sellTimeStamp,
-                    sellDetails,
-                    false
-                );
-            }
+            // const trustScoreDatabase = new TrustScoreManager(
+            //     runtime,
+            //     trustScoreDb
+            // );
+
+            // // add or get recommender
+            // const uuid = uuidv4();
+            // const recommender = await trustScoreDb.getOrCreateRecommender({
+            //     id: uuid,
+            //     address: walletPublicKey.toString(),
+            //     solanaPubkey: walletPublicKey.toString(),
+            // });
+
+            // if (type === "buy") {
+            //     // save the trade
+            //     await trustScoreDatabase.createTradePerformance({
+            //         recommender,
+            //         tokenAddress: response.outputTokenCA,
+            //         buyAmount: response.amount,
+            //         isSimulation: false,
+            //         timestamp: new Date().toISOString(),
+            //     });
+            // } else if (type === "sell") {
+            //     // save the trade
+            //     await trustScoreDatabase.updateSellDetails({
+            //         tokenAddress: response.inputTokenCA,
+            //         amount: response.amount,
+            //         timestamp: new Date().toISOString(),
+            //         recommender,
+            //         isSimulation: false,
+            //     });
+            // }
 
             console.log("Swap completed successfully!");
             console.log(`Transaction ID: ${txid}`);
@@ -484,7 +416,7 @@ export const executeSwap: Action = {
                 text: `Swap completed successfully! Transaction ID: ${txid}`,
             };
 
-            callback?.(responseMsg);
+            await callback?.(responseMsg);
 
             return true;
         } catch (error) {

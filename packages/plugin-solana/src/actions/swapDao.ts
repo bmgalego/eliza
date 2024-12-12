@@ -70,12 +70,12 @@ export const executeSwapForDAO: Action = {
                 Uint8Array.from(
                     Buffer.from(
                         runtime.getSetting("SOLANA_PRIVATE_KEY") ??
-                            runtime.getSetting("WALLET_PRIVATE_KEY"), // should be the authority private key
+                            runtime.getSetting("WALLET_PRIVATE_KEY")!, // should be the authority private key
                         "base64"
                     )
                 )
             );
-            const daoMint = new PublicKey(runtime.getSetting("DAO_MINT")); // DAO mint address
+            const daoMint = new PublicKey(runtime.getSetting("DAO_MINT")!); // DAO mint address
 
             // Derive PDAs
             const [statePDA] = await PublicKey.findProgramAddress(

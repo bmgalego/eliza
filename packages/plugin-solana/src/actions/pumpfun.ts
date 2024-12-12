@@ -349,7 +349,7 @@ export default {
             runtime
         );
 
-        tokenMetadata.image_description = imageResult.data[0].replace(
+        tokenMetadata.image_description = imageResult.data![0].replace(
             /^data:image\/[a-z]+;base64,/,
             ""
         );
@@ -390,7 +390,7 @@ export default {
             const privateKeyString =
                 runtime.getSetting("SOLANA_PRIVATE_KEY") ??
                 runtime.getSetting("WALLET_PRIVATE_KEY");
-            const secretKey = bs58.decode(privateKeyString);
+            const secretKey = bs58.decode(privateKeyString!);
             const deployerKeypair = Keypair.fromSecretKey(secretKey);
 
             // Generate new mint keypair
@@ -472,7 +472,7 @@ export default {
             const successMessage = `Token created and purchased successfully! View at: https://pump.fun/${mintKeypair.publicKey.toBase58()}`;
             console.log(successMessage);
             return result.success;
-        } catch (error) {
+        } catch (error: any) {
             if (callback) {
                 callback({
                     text: `Error during token creation: ${error.message}`,

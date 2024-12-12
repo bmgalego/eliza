@@ -1,4 +1,5 @@
 import { IAgentRuntime, Memory, Provider, State } from "@ai16z/eliza";
+
 interface Order {
     userId: string;
     ticker: string;

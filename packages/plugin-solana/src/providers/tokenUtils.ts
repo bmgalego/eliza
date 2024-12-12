@@ -1,13 +1,6 @@
 import { getAccount, getAssociatedTokenAddress } from "@solana/spl-token";
 import { Connection, PublicKey } from "@solana/web3.js";
-
-export async function getTokenPriceInSol(tokenSymbol: string): Promise<number> {
-    const response = await fetch(
-        `https://price.jup.ag/v6/price?ids=${tokenSymbol}`
-    );
-    const data = await response.json();
-    return data.data[tokenSymbol].price;
-}
+import { SOL_ADDRESS, USDC_ADDRESS } from "../constants";
 
 async function getTokenBalance(
     connection: Connection,
@@ -40,8 +33,8 @@ async function getTokenBalances(
 
     // Add the token mint addresses you want to retrieve balances for
     const tokenMintAddresses = [
-        new PublicKey("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"), // USDC
-        new PublicKey("So11111111111111111111111111111111111111112"), // SOL
+        new PublicKey(USDC_ADDRESS), // USDC
+        new PublicKey(SOL_ADDRESS), // SOL
         // Add more token mint addresses as needed
     ];
 
@@ -61,8 +54,8 @@ async function getTokenBalances(
 function getTokenName(mintAddress: PublicKey): string {
     // Implement a mapping of mint addresses to token names
     const tokenNameMap: { [mintAddress: string]: string } = {
-        EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: "USDC",
-        So11111111111111111111111111111111111111112: "SOL",
+        [USDC_ADDRESS]: "USDC",
+        [SOL_ADDRESS]: "SOL",
         // Add more token mint addresses and their corresponding names
     };
 

@@ -4,6 +4,7 @@ import {
     Recommender,
     RecommenderMetrics,
     RecommenderMetricsHistory,
+    SellDetails,
     TokenPerformance,
     TokenRecommendation,
     TradePerformance,
@@ -335,26 +336,17 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
      */
     async getOrCreateRecommender(
         recommender: Recommender
-    ): Promise<Recommender | null> {
-        try {
-            const existingRecommender = await this.getRecommender(
-                recommender.id
-            );
+    ): Promise<Recommender> {
+        const existingRecommender = await this.getRecommender(recommender.id);
 
-            if (existingRecommender) {
-                // Recommender exists, ensure metrics are initialized
-                await this.initializeRecommenderMetrics(
-                    existingRecommender.id!
-                );
+        if (existingRecommender) {
+            // Recommender exists, ensure metrics are initialized
+            await this.initializeRecommenderMetrics(existingRecommender.id!);
 
-                return existingRecommender;
-            }
-
-            return this.createAndInitializeRecommender(recommender);
-        } catch (error) {
-            console.error("Error in getOrCreateRecommender:", error);
-            return null;
+            return existingRecommender;
         }
+
+        return this.createAndInitializeRecommender(recommender);
     }
 
     /**
@@ -1033,21 +1025,7 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
         tokenAddress: string,
         recommenderId: string,
         buyTimeStamp: string,
-        sellDetails: {
-            sell_price: number;
-            sell_timeStamp: string;
-            sell_amount: number;
-            received_sol: number;
-            sell_value_usd: number;
-            profit_usd: number;
-            profit_percent: number;
-            sell_market_cap: number;
-            market_cap_change: number;
-            sell_liquidity: number;
-            liquidity_change: number;
-            rapidDump: boolean;
-            sell_recommender_id: string | null;
-        },
+        sellDetails: SellDetails,
         isSimulation: boolean
     ): Promise<boolean> {
         const tableName = isSimulation ? "simulation_trade" : "trade";
@@ -1076,17 +1054,17 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
             const result = this.db
                 .prepare(sql)
                 .run(
-                    sellDetails.sell_price,
-                    sellDetails.sell_timeStamp,
-                    sellDetails.sell_amount,
-                    sellDetails.received_sol,
-                    sellDetails.sell_value_usd,
-                    sellDetails.profit_usd,
-                    sellDetails.profit_percent,
-                    sellDetails.sell_market_cap,
-                    sellDetails.market_cap_change,
-                    sellDetails.sell_liquidity,
-                    sellDetails.liquidity_change,
+                    sellDetails.price,
+                    sellDetails.timeStamp,
+                    sellDetails.amount,
+                    sellDetails.receivedSol,
+                    sellDetails.valueUsd,
+                    sellDetails.profitUsd,
+                    sellDetails.profitPercent,
+                    sellDetails.marketCap,
+                    sellDetails.marketCapChange,
+                    sellDetails.liquidity,
+                    sellDetails.liquidityChange,
                     sellDetails.rapidDump ? 1 : 0,
                     tokenAddress,
                     recommenderId,
@@ -1189,30 +1167,7 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
             | undefined;
         if (!row) return null;
 
-        return {
-            token_address: row.token_address,
-            recommender_id: row.recommender_id,
-            buy_price: row.buy_price,
-            sell_price: row.sell_price,
-            buy_timeStamp: row.buy_timeStamp,
-            sell_timeStamp: row.sell_timeStamp,
-            buy_amount: row.buy_amount,
-            sell_amount: row.sell_amount,
-            buy_sol: row.buy_sol,
-            received_sol: row.received_sol,
-            buy_value_usd: row.buy_value_usd,
-            sell_value_usd: row.sell_value_usd,
-            profit_usd: row.profit_usd,
-            profit_percent: row.profit_percent,
-            buy_market_cap: row.buy_market_cap,
-            sell_market_cap: row.sell_market_cap,
-            market_cap_change: row.market_cap_change,
-            buy_liquidity: row.buy_liquidity,
-            sell_liquidity: row.sell_liquidity,
-            liquidity_change: row.liquidity_change,
-            last_updated: row.last_updated,
-            rapidDump: row.rapidDump,
-        };
+        return row;
     }
 
     // ----- Transactions Methods -----

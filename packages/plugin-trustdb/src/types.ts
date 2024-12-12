@@ -101,13 +101,27 @@ export type Transaction = {
     timestamp: string;
 };
 
+export type SellDetails = {
+    price: number;
+    timeStamp: string;
+    amount: number;
+    receivedSol: number;
+    valueUsd: number;
+    profitUsd: number;
+    profitPercent: number;
+    marketCap: number;
+    marketCapChange: number;
+    liquidity: number;
+    liquidityChange: number;
+    rapidDump: boolean;
+    recommenderId: string;
+};
+
 export interface TrustScoreAdapter {
     // Recommender Methods
     addRecommender(recommender: Recommender): Promise<string | null>;
     getRecommender(identifier: string): Promise<Recommender | null>;
-    getOrCreateRecommender(
-        recommender: Recommender
-    ): Promise<Recommender | null>;
+    getOrCreateRecommender(recommender: Recommender): Promise<Recommender>;
     getOrCreateRecommenderWithDiscordId(
         discordId: string
     ): Promise<Recommender | null>;
@@ -158,21 +172,7 @@ export interface TrustScoreAdapter {
         tokenAddress: string,
         recommenderId: string,
         buyTimeStamp: string,
-        sellDetails: {
-            sell_price: number;
-            sell_timeStamp: string;
-            sell_amount: number;
-            received_sol: number;
-            sell_value_usd: number;
-            profit_usd: number;
-            profit_percent: number;
-            sell_market_cap: number;
-            market_cap_change: number;
-            sell_liquidity: number;
-            liquidity_change: number;
-            rapidDump: boolean;
-            sell_recommender_id: string | null;
-        },
+        sellDetails: SellDetails,
         isSimulation: boolean
     ): Promise<boolean>;
     getTradePerformance(

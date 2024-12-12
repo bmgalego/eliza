@@ -5,7 +5,6 @@ import {
     MemoryManager,
     booleanFooter,
     ActionExample,
-    Content,
     IAgentRuntime,
     Memory,
     ModelClass,
@@ -15,11 +14,11 @@ import {
     UUID,
 } from "@ai16z/eliza";
 import { TrustScoreManager } from "../providers/trustScoreProvider.ts";
-import { TokenProvider } from "../providers/token.ts";
 import { WalletProvider } from "../providers/wallet.ts";
 import { Recommender, TrustScoreDatabase } from "@ai16z/plugin-trustdb";
-import { Connection, PublicKey } from "@solana/web3.js";
 import { v4 as uuid } from "uuid";
+import { DexscreenerClient } from "../clients.ts";
+
 type Recomendation = {
     recommender: string;
     ticker: string | null;
@@ -103,8 +102,8 @@ async function handler(
 ) {
     console.log("Evaluating for trust");
     state = state
-        ? await runtime.composeState(message)
-        : await runtime.updateRecentMessageState(state);
+        ? await runtime.updateRecentMessageState(state)
+        : await runtime.composeState(message);
 
     const { agentId, roomId } = state;
 
@@ -181,18 +180,9 @@ async function handler(
     }
 
     // create the wallet provider and token provider
-    const walletProvider = new WalletProvider(
-        new Connection(
-            runtime.getSetting("RPC_URL") ||
-                "https://api.mainnet-beta.solana.com"
-        ),
-        new PublicKey(
-            runtime.getSetting("SOLANA_PUBLIC_KEY") ??
-                runtime.getSetting("WALLET_PUBLIC_KEY")
-        )
-    );
-
+    const walletProvider = WalletProvider.createFromRuntime(runtime);
     const trustScoreDb = new TrustScoreDatabase(runtime.databaseAdapter.db);
+    const trustScoreManager = new TrustScoreManager(runtime, trustScoreDb);
 
     // get actors from the database
     const participants = await runtime.databaseAdapter.getParticipantsForRoom(
@@ -202,21 +192,18 @@ async function handler(
     // TODO: getAccounts in database
     const users = await Promise.all(
         participants.map((id) => runtime.databaseAdapter.getAccountById(id))
-    );
+    ).then((users) => users.filter((user) => !!user));
+
+    // create the trust score manager
 
     for (const recomendation of filteredRecommendations) {
-        const tokenProvider = new TokenProvider(
-            recomendation.contractAddress,
-            walletProvider,
-            runtime.cacheManager
-        );
-
         // TODO: Check to make sure the contract address is valid, it's the right one, etc
 
-        if (!recomendation.contractAddress) {
+        if (!recomendation.contractAddress && !recomendation.ticker) continue;
+
+        if (!recomendation.contractAddress && recomendation.ticker) {
             // this is dangerous someone can send a token with same symbol and more supply
-            const tokenAddress = await tokenProvider.getTokenFromWallet(
-                runtime,
+            const tokenAddress = await walletProvider.getTokenFromWallet(
                 recomendation.ticker
             );
 
@@ -224,29 +211,24 @@ async function handler(
 
             if (!tokenAddress) {
                 // try to search for the symbol and return the contract address with they highest liquidity and market cap
-                const result = await tokenProvider.searchDexScreenerData(
-                    recomendation.ticker
-                );
+                const result =
+                    await DexscreenerClient.searchForHighestLiquidityPair(
+                        recomendation.ticker
+                    );
 
                 const tokenAddress = result?.baseToken?.address;
-                recomendation.contractAddress = tokenAddress;
 
                 if (!tokenAddress) {
                     console.warn("Could not find contract address for token");
                     continue;
                 }
+
+                recomendation.contractAddress = tokenAddress;
             }
         }
 
-        // create the trust score manager
-        const trustScoreManager = new TrustScoreManager(
-            runtime,
-            tokenProvider,
-            trustScoreDb
-        );
-
         // find the first user Id from a user with the username that we extracted
-        const user = users.find(async (user) => {
+        const user = users.find((user) => {
             return (
                 user.name.toLowerCase().trim() ===
                 recomendation.recommender.toLowerCase().trim()
@@ -277,6 +259,10 @@ async function handler(
 
         // from here we just need to make sure code is right
         // buy, dont buy, sell, dont sell
+
+        const tokenProvider = trustScoreManager.getTokenProvider(
+            recomendation.contractAddress!
+        );
 
         const buyAmounts = await tokenProvider.calculateBuyAmounts();
 
@@ -315,25 +301,19 @@ async function handler(
             // recommender.twitterId = user.username;
         }
 
-        await getOrCreateRecommenderInBe(
-            recommender.id,
-            recommender.address,
-            this.backendToken,
-            this.backend
-        );
+        await trustScoreManager.getOrCreateRecommender(recommender);
 
         switch (recomendation.type) {
             // for now, lets just assume buy only, but we should implement
             case "buy":
-                await trustScoreManager.createTradePerformance(
-                    runtime,
-                    recomendation.contractAddress,
+                await trustScoreManager.createTradePerformance({
                     recommender,
-                    {
-                        buy_amount: buyAmount,
-                        is_simulation: true,
-                    }
-                );
+                    tokenAddress: recomendation.contractAddress!,
+                    buyAmount,
+                    timestamp: new Date().toISOString(),
+                    isSimulation: true,
+                });
+
                 break;
             case "sell":
             case "dont_sell":
@@ -624,44 +604,3 @@ None`,
         },
     ],
 };
-
-export async function getOrCreateRecommenderInBe(
-    recommenderId: string,
-    username: string,
-    backendToken: string,
-    backend: string,
-    retries = 3,
-    delayMs = 2000
-) {
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            const response = await fetch(
-                `${backend}/updaters/getOrCreateRecommender`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${backendToken}`,
-                    },
-                    body: JSON.stringify({
-                        recommenderId: recommenderId,
-                        username: username,
-                    }),
-                }
-            );
-            const data = await response.json();
-            return data;
-        } catch (error) {
-            console.error(
-                `Attempt ${attempt} failed: Error getting or creating recommender in backend`,
-                error
-            );
-            if (attempt < retries) {
-                console.log(`Retrying in ${delayMs} ms...`);
-                await new Promise((resolve) => setTimeout(resolve, delayMs));
-            } else {
-                console.error("All attempts failed.");
-            }
-        }
-    }
-}
