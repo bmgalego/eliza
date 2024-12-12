@@ -240,7 +240,7 @@ export interface State {
     userId?: UUID;
 
     /** ID of agent in conversation */
-    agentId?: UUID;
+    agentId: UUID;
 
     /** Agent's biography */
     bio: string;
