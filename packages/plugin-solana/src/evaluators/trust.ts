@@ -148,10 +148,6 @@ async function handler(
         template: recommendationTemplate,
     });
 
-    console.log({
-        recomendContext: context,
-    });
-
     const recommendations: Recomendation[] = await generateObjectArray({
         runtime,
         context,
@@ -211,10 +207,11 @@ async function handler(
 
             if (!tokenAddress) {
                 // try to search for the symbol and return the contract address with they highest liquidity and market cap
-                const result =
-                    await DexscreenerClient.searchForHighestLiquidityPair(
-                        recomendation.ticker
-                    );
+                const result = await DexscreenerClient.createFromRuntime(
+                    runtime
+                ).searchForHighestLiquidityPair(recomendation.ticker, {
+                    expires: "5m",
+                });
 
                 const tokenAddress = result?.baseToken?.address;
 
@@ -266,8 +263,6 @@ async function handler(
 
         const buyAmounts = await tokenProvider.calculateBuyAmounts();
 
-        console.log({ buyAmounts });
-
         let buyAmount =
             buyAmounts[recomendation.conviction.toLowerCase().trim()];
 
@@ -279,8 +274,6 @@ async function handler(
 
         // TODO: is this is a buy, sell, dont buy, or dont sell?
         const shouldTrade = await tokenProvider.shouldTradeToken();
-
-        console.log({ shouldTrade });
 
         if (!shouldTrade) {
             console.warn(
@@ -294,9 +287,12 @@ async function handler(
             address: user.username,
         };
 
-        // TODO: use msg source to determine the client and create recommender
-        // message.content.source
+        if (message.content.source) {
+            recommender.address += `@${message.content.source}`;
+        }
 
+        // TODO: use msg source to determine the client and update recommender
+        // message.content.source
         if (message.content.source === "twitter") {
             // recommender.twitterId = user.username;
         }

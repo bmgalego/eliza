@@ -286,18 +286,59 @@ export class JupiterClient {
     }
 }
 
-export class DexscreenerClient {
-    static async search(address: string): Promise<DexScreenerData> {
-        // const cacheKey = `dexScreenerData_${address}`;
-        // const cachedData = await this.getCachedData<DexScreenerData>(cacheKey);
-        // if (cachedData) {
-        //     console.log("Returning cached DexScreener data.");
-        //     return cachedData;
-        // }
+type DexscreenerOptions = {
+    expires?: string | CacheOptions["expires"];
+};
 
+export class DexscreenerClient {
+    constructor(private cache: ICacheManager) {}
+
+    static createFromRuntime(runtime: IAgentRuntime) {
+        return new this(runtime.cacheManager);
+    }
+
+    async request<T = any>(
+        path: string,
+        params?: QueryParams,
+        options?: DexscreenerOptions
+    ) {
+        const cacheKey = [
+            "dexscreener",
+            buildUrl(path, params), // remove first "/"
+        ]
+            .filter(Boolean)
+            .join("/");
+
+        if (options?.expires) {
+            const cached = await this.cache.get<T>(cacheKey);
+            if (cached) return cached;
+        }
+
+        const res = await http.get.json<T>(
+            `https://api.dexscreener.com/${path}`,
+            params
+        );
+
+        if (options?.expires) {
+            await this.cache.set(cacheKey, res, {
+                expires: Date.now() + parseExpires(options.expires),
+            });
+        }
+
+        return res;
+    }
+
+    async search(
+        address: string,
+        options?: DexscreenerOptions
+    ): Promise<DexScreenerData> {
         try {
-            const data = await http.json<DexScreenerData>(
-                `https://api.dexscreener.com/latest/dex/search?q=${address}`
+            const data = await this.request<DexScreenerData>(
+                `latest/dex/search`,
+                {
+                    q: address,
+                },
+                options
             );
 
             if (!data || !data.pairs) {
@@ -314,10 +355,11 @@ export class DexscreenerClient {
         }
     }
 
-    static async searchForHighestLiquidityPair(
-        address: string
+    async searchForHighestLiquidityPair(
+        address: string,
+        options?: DexscreenerOptions
     ): Promise<DexScreenerPair | null> {
-        const data = await this.search(address);
+        const data = await this.search(address, options);
 
         if (data.pairs.length === 0) {
             return null;
@@ -350,13 +392,16 @@ export class HeliusClient {
         return new this(apiKey, runtime.cacheManager);
     }
 
-    async fetchHolderList(address: string): Promise<HolderData[]> {
-        const cached = await this.cache.get<HolderData[]>(
-            `helius/token-holders/${address}`
-        );
+    async fetchHolderList(
+        address: string,
+        options?: { expires?: string | CacheOptions["expires"] }
+    ): Promise<HolderData[]> {
+        if (options?.expires) {
+            const cached = await this.cache.get<HolderData[]>(
+                `helius/token-holders/${address}`
+            );
 
-        if (cached) {
-            return cached;
+            if (cached) return cached;
         }
 
         const allHoldersMap = new Map<string, number>();
@@ -433,7 +478,14 @@ export class HeliusClient {
 
             console.log(`Total unique holders fetched: ${holders.length}`);
 
-            await this.cache.set(`helius/token-holders/${address}`, holders);
+            if (options?.expires)
+                await this.cache.set(
+                    `helius/token-holders/${address}`,
+                    holders,
+                    {
+                        expires: Date.now() + parseExpires(options.expires),
+                    }
+                );
 
             return holders;
         } catch (error) {
@@ -443,6 +495,10 @@ export class HeliusClient {
     }
 }
 
+type CoingeckoOptions = {
+    expires?: string | CacheOptions["expires"];
+};
+
 export class CoingeckoClient {
     constructor(
         private readonly apiKey: string,
@@ -450,29 +506,51 @@ export class CoingeckoClient {
     ) {}
 
     static createFromRuntime(runtime: IAgentRuntime) {
-        const apiKey = runtime.getSetting("COINGECKO_API_KEY") ?? "";
+        const apiKey = runtime.getSetting("COINGECKO_API_KEY");
 
-        // if (!apiKey) {
-        //     throw new Error("missing COINGECKO_API_KEY");
-        // }
+        if (!apiKey) {
+            throw new Error("missing COINGECKO_API_KEY");
+        }
 
         return new this(apiKey, runtime.cacheManager);
     }
 
-    async fetchPrices(): Promise<Prices> {
-        const cached = await this.cache.get<Prices>("coingecko/prices");
+    async request<T = any>(
+        path: string,
+        params?: QueryParams,
+        options?: CoingeckoOptions
+    ) {
+        const cacheKey = ["coingecko", buildUrl(path, params)]
+            .filter(Boolean)
+            .join("/");
 
-        if (cached) {
-            return cached;
+        if (options?.expires) {
+            const cached = await this.cache.get<T>(cacheKey);
+            if (cached) return cached;
         }
 
-        const prices: Prices = {
-            solana: { usd: "250" },
-            bitcoin: { usd: "100000" },
-            ethereum: { usd: "4000" },
-        };
+        const res = await http.get.json<T>(
+            `https://api.coingecko.com/api/v3/${path}`,
+            params,
+            {
+                headers: {
+                    "x-cg-demo-api-key": this.apiKey,
+                },
+            }
+        );
 
-        await this.cache.set("coingecko/prices", prices);
+        if (options?.expires) {
+            await this.cache.set(cacheKey, res);
+        }
+
+        return res;
+    }
+
+    async fetchPrices(): Promise<Prices> {
+        const prices = await this.request<Prices>("simple/price", {
+            ids: "solana,bitcoin,ethereum",
+            vs_currencies: "usd",
+        });
 
         return prices;
     }
@@ -509,7 +587,7 @@ type BirdeyeRequestOptions = {
 };
 
 export class BirdeyeClient {
-    static readonly url = "https://public-api.birdeye.so";
+    static readonly url = "https://public-api.birdeye.so/";
 
     static async request<T = any>(
         apiKey: string,
@@ -529,7 +607,8 @@ export class BirdeyeClient {
         );
 
         if (!res.success || !res.data) {
-            throw new Error("Failed");
+            console.error({ res });
+            throw new Error("Birdeye request failed:" + path);
         }
 
         return res.data;
@@ -555,19 +634,14 @@ export class BirdeyeClient {
         params: QueryParams,
         options?: BirdeyeRequestOptions
     ) {
-        const cacheKey = [
-            "birdeye",
-            options?.chain,
-            buildUrl(path, params).slice(1), // remove first "/"
-        ]
+        const cacheKey = ["birdeye", options?.chain, buildUrl(path, params)]
             .filter(Boolean)
             .join("/");
 
-        console.log({ cacheKey });
-
-        const cached = await this.cache.get<T>(cacheKey);
-
-        if (cached) return cached;
+        if (options?.expires) {
+            const cached = await this.cache.get<T>(cacheKey);
+            if (cached) return cached;
+        }
 
         const response = await BirdeyeClient.request<T>(
             this.apiKey,
@@ -580,17 +654,11 @@ export class BirdeyeClient {
                 : undefined
         );
 
-        const expires = options?.expires
-            ? typeof options.expires === "string"
-                ? parseTimeToMs(options.expires)
-                : options.expires
-            : undefined;
-
-        await this.cache.set(
-            cacheKey,
-            response,
-            expires ? { expires: Date.now() + expires } : undefined
-        );
+        if (options?.expires) {
+            await this.cache.set(cacheKey, response, {
+                expires: Date.now() + parseExpires(options.expires),
+            });
+        }
 
         return response;
     }
@@ -600,7 +668,7 @@ export class BirdeyeClient {
         options?: BirdeyeRequestOptions
     ): Promise<number> {
         const price = await this.request<{ value: number }>(
-            `/defi/price`,
+            `defi/price`,
             { address },
             options
         );
@@ -613,7 +681,7 @@ export class BirdeyeClient {
         options?: BirdeyeRequestOptions
     ): Promise<TokenOverview> {
         const token = await this.request<TokenOverview>(
-            `/defi/token_overview`,
+            "defi/token_overview",
             { address },
             options
         );
@@ -626,7 +694,7 @@ export class BirdeyeClient {
         options?: BirdeyeRequestOptions
     ): Promise<TokenSecurityData> {
         const security = await this.request<TokenSecurityData>(
-            `/defi/token_security`,
+            "defi/token_security",
             { address },
             options
         );
@@ -639,7 +707,7 @@ export class BirdeyeClient {
         options?: BirdeyeRequestOptions
     ): Promise<TokenTradeData> {
         const tradeData = await this.request<TokenTradeData>(
-            `/defi/v3/token/trade-data/single`,
+            "defi/v3/token/trade-data/single",
             { address },
             options
         );
@@ -652,7 +720,7 @@ export class BirdeyeClient {
         options?: BirdeyeRequestOptions
     ) {
         const tokenList = await this.request<WalletTokenList>(
-            `/v1/wallet/token_list`,
+            "v1/wallet/token_list",
             { wallet: address },
             options
         );
@@ -770,12 +838,6 @@ export class CodexClient {
 
     async fetchToken(address: string, networkId: number): Promise<TokenCodex> {
         try {
-            // const cacheKey = `token_${address}`;
-            // const cachedData = await this.getCachedData<TokenCodex>(cacheKey);
-            // if (cachedData) {
-            //     console.log(`Returning cached token data for ${address}.`);
-            //     return cachedData;
-            // }
             const query = `
                 query Token($address: String!, $networkId: Int!) {
                     token(input: { address: $address, networkId: $networkId }) {
@@ -810,8 +872,6 @@ export class CodexClient {
             if (!token) {
                 throw new Error(`No data returned for token ${address}`);
             }
-
-            // await this.setCachedData(cacheKey, token);
 
             return token;
         } catch (error: any) {
@@ -1083,8 +1143,12 @@ const units = {
 
 function parseTimeToMs(timeStr: string) {
     const match = timeStr.match(/^(\d+)([a-z]+)$/i);
-    if (!match) return null;
+    if (!match) return 0;
 
     const [_, value, unit] = match;
     return units[unit.toLowerCase()] * parseInt(value);
+}
+
+function parseExpires(expires: string | number) {
+    return typeof expires === "string" ? parseTimeToMs(expires) : expires;
 }

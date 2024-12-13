@@ -21,9 +21,11 @@ export class TokenProvider {
     ) {}
 
     async calculateBuyAmounts(): Promise<CalculatedBuyAmounts> {
-        const dexScreenerData = await DexscreenerClient.search(
-            this.tokenAddress
-        );
+        const dexScreenerData = await DexscreenerClient.createFromRuntime(
+            this.runtime
+        ).search(this.tokenAddress, {
+            expires: "5m",
+        });
 
         const prices = await CoingeckoClient.createFromRuntime(
             this.runtime
@@ -202,7 +204,6 @@ export class TokenProvider {
                 `Fetching security data for token: ${this.tokenAddress}`
             );
             const security = await this.fetchTokenSecurity();
-            console.log({ security });
 
             const token = await BirdeyeClient.createFromRuntime(
                 this.runtime
@@ -219,13 +220,13 @@ export class TokenProvider {
             console.log(`Fetching trade data for token: ${this.tokenAddress}`);
             const tradeData = await this.fetchTokenTradeData();
 
-            console.log({ tradeData });
-
             console.log(
                 `Fetching DexScreener data for token: ${this.tokenAddress}`
             );
 
-            const dexData = await DexscreenerClient.search(this.tokenAddress);
+            const dexData = await DexscreenerClient.createFromRuntime(
+                this.runtime
+            ).search(this.tokenAddress);
 
             console.log(
                 `Analyzing holder distribution for token: ${this.tokenAddress}`
