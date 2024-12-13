@@ -97,13 +97,21 @@ export class SimulationSellingService {
                 `Received message for token ${tokenAddress} to sell ${amount}`
             );
 
+            // todo: update token performance?
             const tokenPerformance =
                 await this.trustScoreDb.getTokenPerformance(tokenAddress);
 
+            if (!tokenPerformance) return;
+
+            const recomender = await this.trustManager.getOrCreateRecommender({
+                id: sell_recommender_id,
+                address: sell_recommender_id,
+            });
+
             const decision: SellDecision = {
-                tokenPerformance: tokenPerformance!,
+                tokenPerformance: tokenPerformance,
                 amountToSell: amount,
-                recommenderId: sell_recommender_id,
+                recommender: recomender,
             };
 
             // Execute the sell
@@ -121,10 +129,8 @@ export class SimulationSellingService {
      * @param decision The sell decision containing token performance and amount to sell.
      */
     private async executeSellDecision(decision: SellDecision) {
-        const { tokenPerformance, amountToSell, recommenderId } = decision;
+        const { tokenPerformance, amountToSell } = decision;
         const { tokenAddress } = tokenPerformance;
-
-        if (!recommenderId) return;
 
         try {
             console.log(
@@ -133,10 +139,9 @@ export class SimulationSellingService {
 
             // Update the sell details
 
-            const recommender = await this.trustScoreDb.getOrCreateRecommender({
-                id: recommenderId,
-                address: recommenderId,
-            });
+            const recommender = await this.trustManager.getOrCreateRecommender(
+                decision.recommender
+            );
 
             // Update sell details in the database
             const sellDetailsData = await this.trustManager.updateSellDetails({

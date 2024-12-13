@@ -148,9 +148,7 @@ export class TrustScoreManager {
 
         return {
             tokenPerformance: {
-                tokenAddress:
-                    processedData.dexScreenerData.pairs[0]?.baseToken.address ||
-                    "",
+                tokenAddress,
                 priceChange24h:
                     processedData.tradeData.price_change_24h_percent,
                 volumeChange24h: processedData.tradeData.volume_24h,
@@ -174,7 +172,7 @@ export class TrustScoreManager {
                 initialMarketCap:
                     processedData.dexScreenerData.pairs[0]?.marketCap || 0,
                 lastUpdated: new Date(),
-                symbol: "",
+                symbol: processedData.token.symbol,
             },
             recommenderMetrics: {
                 recommenderId: recommenderId,
@@ -609,7 +607,7 @@ export class TrustScoreManager {
                 acc[tokenAddress].push(recommendation);
                 return acc;
             },
-            {} as Record<string, Array<TokenRecommendation>>
+            {} as Record<string, TokenRecommendation[]>
         );
 
         const results: TokenRecommendationSummary[] = [];

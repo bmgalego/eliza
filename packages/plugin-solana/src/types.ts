@@ -339,7 +339,7 @@ export type TradeData = {
 export type SellDecision = {
     tokenPerformance: TokenPerformance;
     amountToSell: number;
-    recommenderId: string;
+    recommender: Recommender;
 };
 
 export type SellDetails = {
