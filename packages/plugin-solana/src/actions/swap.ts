@@ -16,7 +16,6 @@ import {
     type Action,
     composeContext,
     generateObjectDEPRECATED,
-    settings,
 } from "@ai16z/eliza";
 import { walletProvider, WalletProvider } from "../providers/wallet.ts";
 import { getTokenDecimals } from "./swapUtils.ts";
@@ -33,7 +32,7 @@ async function swapToken(
     try {
         // Get the decimals for the input token
         const decimals =
-            inputTokenCA === settings.SOL_ADDRESS
+            inputTokenCA === SOL_ADDRESS
                 ? new BigNumber(9)
                 : new BigNumber(
                       await getTokenDecimals(connection, inputTokenCA)

@@ -9,12 +9,10 @@ import {
 import { toBN } from "../bignumber.ts";
 import {
     BirdeyeClient,
-    CodexClient,
     CoingeckoClient,
     DexscreenerClient,
     HeliusClient,
 } from "../clients.ts";
-import { SOLANA_NETWORK_ID } from "../constants.ts";
 
 export class TokenProvider {
     constructor(
@@ -40,6 +38,7 @@ export class TokenProvider {
         // Get the first pair
         const pair = dexScreenerData.pairs[0];
         const { liquidity, marketCap } = pair;
+
         if (!liquidity || !marketCap) {
             return { none: 0, low: 0, medium: 0, high: 0 };
         }
@@ -82,14 +81,21 @@ export class TokenProvider {
 
     async fetchTokenSecurity(): Promise<TokenSecurityData> {
         return BirdeyeClient.createFromRuntime(this.runtime).fetchTokenSecurity(
-            this.tokenAddress
+            this.tokenAddress,
+            {
+                chain: "solana",
+                expires: "5m", // TODO: configure this
+            }
         );
     }
 
     async fetchTokenTradeData(): Promise<TokenTradeData> {
         return BirdeyeClient.createFromRuntime(
             this.runtime
-        ).fetchTokenTradeData(this.tokenAddress);
+        ).fetchTokenTradeData(this.tokenAddress, {
+            chain: "solana",
+            expires: "1m", // TODO: configure this
+        });
     }
     async analyzeHolderDistribution(
         tradeData: TokenTradeData
@@ -200,14 +206,19 @@ export class TokenProvider {
 
             const token = await BirdeyeClient.createFromRuntime(
                 this.runtime
-            ).fetchTokenOverview(this.tokenAddress, "solana");
+            ).fetchTokenOverview(this.tokenAddress, {
+                chain: "solana",
+                expires: "1h", // TODO: configure this
+            });
 
+            // TODO: include codex?
             // const tokenCodex = await CodexClient.createFromRuntime(
             //     this.runtime
             // ).fetchToken(this.tokenAddress, SOLANA_NETWORK_ID);
 
             console.log(`Fetching trade data for token: ${this.tokenAddress}`);
             const tradeData = await this.fetchTokenTradeData();
+
             console.log({ tradeData });
 
             console.log(

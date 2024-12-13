@@ -5,6 +5,7 @@ import {
     HolderData,
     Prices,
     TokenCodex,
+    TokenOverview,
     TokenSecurityData,
     TokenTradeData,
     TradeData,
@@ -12,27 +13,128 @@ import {
     WalletPortfolioItem,
 } from "./types";
 import { toBN } from "./bignumber";
-import { IAgentRuntime } from "@ai16z/eliza";
+import { CacheOptions, IAgentRuntime, ICacheManager } from "@ai16z/eliza";
 import { SOL_ADDRESS, SOLANA_NETWORK_ID } from "./constants";
 import { Recommender } from "@ai16z/plugin-trustdb";
 
 let nextRpcRequestId = 1;
 
-export class HttpClient {
-    static async request(url: string, options?: RequestInit) {
-        try {
-            const res = await fetch(url, options);
-            if (!res.ok) {
-                console.log(res.statusText, await res.text());
-                throw new Error("request failed");
-            }
-            return res;
-        } catch (error) {
-            throw error;
-        }
-    }
+type QueryParams =
+    | Record<string, string | number | boolean | null | undefined>
+    | URLSearchParams;
 
-    static async json<T = any>(url: string, options?: RequestInit) {
+interface RetryOptions {
+    maxRetries?: number;
+    initialDelay?: number;
+    maxDelay?: number;
+    backoffFactor?: number;
+    retryableStatuses?: number[];
+}
+
+interface RequestOptions extends RequestInit {
+    retryOptions?: RetryOptions;
+    params?: QueryParams;
+}
+
+const DEFAULT_RETRY_OPTIONS: Required<RetryOptions> = {
+    maxRetries: 3,
+    initialDelay: 1000,
+    maxDelay: 30000,
+    backoffFactor: 2,
+    retryableStatuses: [408, 429, 500, 502, 503, 504],
+};
+
+class RequestError extends Error {
+    constructor(
+        message: string,
+        public response?: Response
+    ) {
+        super(message);
+        this.name = "RequestError";
+    }
+}
+
+const sleep = (ms: number): Promise<void> =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+const calculateDelay = (
+    attempt: number,
+    options: Required<RetryOptions>
+): number => {
+    const delay =
+        options.initialDelay * Math.pow(options.backoffFactor, attempt - 1);
+    return Math.min(delay, options.maxDelay);
+};
+
+const isRetryableError = (error: any): boolean =>
+    error.name === "TypeError" ||
+    error.name === "AbortError" ||
+    error instanceof RequestError;
+
+const buildUrl = (url: string, params?: QueryParams): string => {
+    if (!params) return url;
+
+    const searchParams =
+        params instanceof URLSearchParams
+            ? params
+            : new URLSearchParams(
+                  Object.entries(params)
+                      .filter(([_, value]) => value != null)
+                      .map(([key, value]) => [key, String(value)])
+              );
+
+    const separator = url.includes("?") ? "&" : "?";
+    const queryString = searchParams.toString();
+
+    return queryString ? `${url}${separator}${queryString}` : url;
+};
+
+export const http = {
+    async request(url: string, options?: RequestOptions): Promise<Response> {
+        const { params, ...fetchOptions } = options || {};
+        const fullUrl = buildUrl(url, params);
+
+        const retryOptions: Required<RetryOptions> = {
+            ...DEFAULT_RETRY_OPTIONS,
+            ...options?.retryOptions,
+        };
+
+        let attempt = 1;
+
+        while (true) {
+            try {
+                const res = await fetch(fullUrl, fetchOptions);
+
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    throw new RequestError(
+                        `Request failed with status ${res.status}: ${errorText}`,
+                        res
+                    );
+                }
+
+                return res;
+            } catch (error: any) {
+                if (
+                    isRetryableError(error) &&
+                    attempt < retryOptions.maxRetries
+                ) {
+                    const delay = calculateDelay(attempt, retryOptions);
+                    console.warn(
+                        `Request failed with error: ${error.message}. ` +
+                            `Retrying in ${delay}ms (attempt ${attempt}/${retryOptions.maxRetries})`
+                    );
+                    await sleep(delay);
+                    attempt++;
+                    continue;
+                }
+
+                throw error;
+            }
+        }
+    },
+
+    async json<T = any>(url: string, options?: RequestOptions) {
         const res = await this.request(url, {
             ...options,
             headers: {
@@ -41,32 +143,62 @@ export class HttpClient {
             },
         });
         return (await res.json()) as T;
-    }
+    },
 
-    static post = {
-        async request(url: string, body: object, options?: RequestInit) {
-            return HttpClient.request(url, {
+    get: {
+        async request(
+            url: string,
+            params?: QueryParams,
+            options?: RequestInit
+        ) {
+            return http.request(url, {
+                ...options,
+                method: "GET",
+                params,
+            });
+        },
+        async json<T = any>(
+            url: string,
+            params?: QueryParams,
+            options?: RequestInit
+        ) {
+            return http.json<T>(url, {
+                ...options,
+                method: "GET",
+                params,
+            });
+        },
+    },
+
+    post: {
+        async request(url: string, body: object, options?: RequestOptions) {
+            return http.request(url, {
                 ...options,
                 method: "POST",
                 body: JSON.stringify(body),
             });
         },
-        async json<T = any>(url: string, body: object, options?: RequestInit) {
-            return HttpClient.json<T>(url, {
+
+        async json<ReturnType = any, Body extends object = object>(
+            url: string,
+            body: Body,
+            options?: RequestOptions
+        ) {
+            return http.json<ReturnType>(url, {
                 ...options,
                 method: "POST",
                 body: JSON.stringify(body),
             });
         },
-    };
+    },
 
-    static async jsonrpc<T = any>(
+    async jsonrpc<ReturnType = any, Params extends object = object>(
         url: string,
         method: string,
-        params: object,
+        params: Params,
         headers?: HeadersInit
     ) {
-        return this.post.json<T>(
+        return this.post.json<ReturnType>(
             url,
             {
                 jsonrpc: "2.0",
@@ -74,77 +206,34 @@ export class HttpClient {
                 method,
                 params,
             },
-            {
-                headers,
-            }
+            { headers }
         );
-    }
+    },
 
-    static async graphql<T = any>(
+    async graphql<ReturnType = any, Variables extends object = object>(
         url: string,
         query: string,
-        variables: object,
+        variables: Variables,
         headers?: HeadersInit
     ) {
-        return this.post.json<T>(
+        return this.post.json<ReturnType>(
             url,
             {
                 query,
                 variables,
             },
-            {
-                headers,
-            }
+            { headers }
         );
-    }
-}
-
-// async function fetchWithRetry(
-//     url: string,
-//     options: RequestInit = {},
-//     maxRetries: number,
-//     retryDelay: number
-// ): Promise<any> {
-//     let lastError: any;
-
-//     for (let i = 0; i < maxRetries; i++) {
-//         try {
-//             const response = await fetch(url, {
-//                 ...options,
-//             });
-
-//             if (!response.ok) {
-//                 const errorText = await response.text();
-//                 throw new Error(
-//                     `HTTP error! status: ${response.status}, message: ${errorText}`
-//                 );
-//             }
-
-//             const data = await response.json();
-//             return data;
-//         } catch (error) {
-//             console.error(`Attempt ${i + 1} failed:`, error);
-//             lastError = error as Error;
-//             if (i < maxRetries - 1) {
-//                 const delay = retryDelay * Math.pow(2, i);
-//                 console.log(`Waiting ${delay}ms before retrying...`);
-//                 await new Promise((resolve) => setTimeout(resolve, delay));
-//                 continue;
-//             }
-//         }
-//     }
-
-//     console.error("All attempts failed. Throwing the last error:", lastError);
-//     throw lastError;
-// }
+    },
+};
 
 export class JupiterClient {
     static baseUrl = "https://price.jup.ag/v6";
 
-    static async getTokenPriceInSol(tokenSymbol: string): Promise<number> {
-        const data = await HttpClient.json(
-            `${this.baseUrl}/price?ids=${tokenSymbol}`
-        );
+    static async getPrice(tokenSymbol: string): Promise<number> {
+        const data = await http.get.json(`${this.baseUrl}/price`, {
+            ids: tokenSymbol,
+        });
 
         return data.data[tokenSymbol].price;
     }
@@ -155,16 +244,12 @@ export class JupiterClient {
         amount: string,
         slippageBps: number = 50
     ) {
-        const params = new URLSearchParams({
+        const quote = await http.get.json(`${this.baseUrl}/quote`, {
             inputMint,
             outputMint,
             amount,
             slippageBps: slippageBps.toString(),
         });
-
-        const quote = await HttpClient.json(
-            `${this.baseUrl}/quote?${params.toString()}`
-        );
 
         if (!quote || quote.error) {
             console.error("Quote error:", quote);
@@ -185,7 +270,7 @@ export class JupiterClient {
             dynamicComputeUnitLimit: true,
         };
 
-        const swapData = await HttpClient.post.json(
+        const swapData = await http.post.json(
             `${this.baseUrl}/swap`,
             swapRequestBody
         );
@@ -209,8 +294,9 @@ export class DexscreenerClient {
         //     console.log("Returning cached DexScreener data.");
         //     return cachedData;
         // }
+
         try {
-            const data = await HttpClient.json<DexScreenerData>(
+            const data = await http.json<DexScreenerData>(
                 `https://api.dexscreener.com/latest/dex/search?q=${address}`
             );
 
@@ -249,7 +335,10 @@ export class DexscreenerClient {
 }
 
 export class HeliusClient {
-    constructor(private readonly apiKey: string) {}
+    constructor(
+        private readonly apiKey: string,
+        private cache: ICacheManager
+    ) {}
 
     static createFromRuntime(runtime: IAgentRuntime) {
         const apiKey = runtime.getSetting("HELIUS_API_KEY");
@@ -258,16 +347,17 @@ export class HeliusClient {
             throw new Error("missing HELIUS_API_KEY");
         }
 
-        return new this(apiKey);
+        return new this(apiKey, runtime.cacheManager);
     }
 
     async fetchHolderList(address: string): Promise<HolderData[]> {
-        // const cacheKey = `holderList_${address}`;
-        // const cachedData = await this.getCachedData<HolderData[]>(cacheKey);
-        // if (cachedData) {
-        //     console.log("Returning cached holder list.");
-        //     return cachedData;
-        // }
+        const cached = await this.cache.get<HolderData[]>(
+            `helius/token-holders/${address}`
+        );
+
+        if (cached) {
+            return cached;
+        }
 
         const allHoldersMap = new Map<string, number>();
         let page = 1;
@@ -284,15 +374,18 @@ export class HeliusClient {
                     mint: address,
                     cursor: cursor,
                 };
+
                 if (cursor != undefined) {
                     params.cursor = cursor;
                 }
+
                 console.log(`Fetching holders - Page ${page}`);
+
                 if (page > 2) {
                     break;
                 }
 
-                const data = await HttpClient.jsonrpc(
+                const data = await http.jsonrpc(
                     url,
                     "getTokenAccounts",
                     params
@@ -340,8 +433,7 @@ export class HeliusClient {
 
             console.log(`Total unique holders fetched: ${holders.length}`);
 
-            // Cache the result
-            // await this.setCachedData(cacheKey, holders);
+            await this.cache.set(`helius/token-holders/${address}`, holders);
 
             return holders;
         } catch (error) {
@@ -352,7 +444,10 @@ export class HeliusClient {
 }
 
 export class CoingeckoClient {
-    constructor(private readonly apiKey: string) {}
+    constructor(
+        private readonly apiKey: string,
+        private readonly cache: ICacheManager
+    ) {}
 
     static createFromRuntime(runtime: IAgentRuntime) {
         const apiKey = runtime.getSetting("COINGECKO_API_KEY") ?? "";
@@ -361,69 +456,29 @@ export class CoingeckoClient {
         //     throw new Error("missing COINGECKO_API_KEY");
         // }
 
-        return new this(apiKey);
+        return new this(apiKey, runtime.cacheManager);
     }
 
     async fetchPrices(): Promise<Prices> {
+        const cached = await this.cache.get<Prices>("coingecko/prices");
+
+        if (cached) {
+            return cached;
+        }
+
         const prices: Prices = {
             solana: { usd: "250" },
             bitcoin: { usd: "100000" },
             ethereum: { usd: "4000" },
         };
 
-        return prices;
-        // try {
-        //     const cacheKey = "prices";
-        //     const cachedValue = this.cache.get<Prices>(cacheKey);
-        //     if (cachedValue) {
-        //         console.log("Cache hit for fetchPrices");
-        //         return cachedValue;
-        //     }
-        //     console.log("Cache miss for fetchPrices");
-        //     const { SOL, BTC, ETH } = PROVIDER_CONFIG.TOKEN_ADDRESSES;
-        //     const tokens = [SOL, BTC, ETH];
+        await this.cache.set("coingecko/prices", prices);
 
-        //     for (const token of tokens) {
-        //         const response = await this.fetchWithRetry(
-        //             runtime,
-        //             `${PROVIDER_CONFIG.BIRDEYE_API}/defi/price?address=${token}`,
-        //             {
-        //                 headers: {
-        //                     "x-chain": "solana",
-        //                 },
-        //             }
-        //         );
-        //         if (response?.data?.value) {
-        //             const price = response.data.value.toString();
-        //             prices[
-        //                 token === SOL
-        //                     ? "solana"
-        //                     : token === BTC
-        //                       ? "bitcoin"
-        //                       : "ethereum"
-        //             ].usd = price;
-        //         } else {
-        //             console.warn(`No price data available for token: ${token}`);
-        //         }
-        //     }
-        //     this.cache.set(cacheKey, prices);
-        //     return prices;
-        // } catch (error) {
-        //     console.error("Error fetching prices:", error);
-        //     throw error;
-        // }
+        return prices;
     }
 }
 
-export type TokenOverview = {
-    address: string;
-    name: string;
-    symbol: string;
-    decimals: number;
-    logoUri: string;
-};
-
-type TokenListItem = {
+type WalletTokenListItem = {
     address: string;
     name: string;
     symbol: string;
@@ -436,10 +491,10 @@ type TokenListItem = {
     valueUsd: number;
 };
 
-type TokenListResponse = {
+type WalletTokenList = {
     wallet: string;
     totalUsd: number;
-    items: TokenListItem[];
+    items: WalletTokenListItem[];
 };
 
 type BirdeyeXChain = "solana" | "ethereum";
@@ -448,16 +503,23 @@ type BirdeyeClientHeaders = {
     "x-chain"?: BirdeyeXChain;
 };
 
+type BirdeyeRequestOptions = {
+    chain?: BirdeyeXChain;
+    expires?: string | CacheOptions["expires"];
+};
+
 export class BirdeyeClient {
     static readonly url = "https://public-api.birdeye.so";
 
     static async request<T = any>(
         apiKey: string,
         path: string,
+        params?: QueryParams,
         headers?: BirdeyeClientHeaders
     ): Promise<T> {
-        const res = await HttpClient.json<{ success: boolean; data?: T }>(
+        const res = await http.get.json<{ success: boolean; data?: T }>(
             this.url + path,
+            params,
             {
                 headers: {
                     ...headers,
@@ -473,7 +535,10 @@ export class BirdeyeClient {
         return res.data;
     }
 
-    constructor(private readonly apiKey: string) {}
+    constructor(
+        private readonly apiKey: string,
+        private readonly cache: ICacheManager
+    ) {}
 
     static createFromRuntime(runtime: IAgentRuntime) {
         const apiKey = runtime.getSetting("BIRDEYE_API_KEY");
@@ -482,36 +547,75 @@ export class BirdeyeClient {
             throw new Error("missing BIRDEYE_API_KEY");
         }
 
-        return new this(apiKey);
+        return new this(apiKey, runtime.cacheManager);
     }
 
-    request<T = any>(path: string, headers?: BirdeyeClientHeaders) {
-        return BirdeyeClient.request<T>(this.apiKey, path, headers);
+    async request<T = any>(
+        path: string,
+        params: QueryParams,
+        options?: BirdeyeRequestOptions
+    ) {
+        const cacheKey = [
+            "birdeye",
+            options?.chain,
+            buildUrl(path, params).slice(1), // remove first "/"
+        ]
+            .filter(Boolean)
+            .join("/");
+
+        console.log({ cacheKey });
+
+        const cached = await this.cache.get<T>(cacheKey);
+
+        if (cached) return cached;
+
+        const response = await BirdeyeClient.request<T>(
+            this.apiKey,
+            path,
+            params,
+            options?.chain
+                ? {
+                      "x-chain": options.chain,
+                  }
+                : undefined
+        );
+
+        const expires = options?.expires
+            ? typeof options.expires === "string"
+                ? parseTimeToMs(options.expires)
+                : options.expires
+            : undefined;
+
+        await this.cache.set(
+            cacheKey,
+            response,
+            expires ? { expires: Date.now() + expires } : undefined
+        );
+
+        return response;
     }
 
     async fetchPrice(
         address: string,
-        chain: BirdeyeXChain = "solana"
-    ): Promise<string> {
+        options?: BirdeyeRequestOptions
+    ): Promise<number> {
         const price = await this.request<{ value: number }>(
-            `/defi/price?address=${address}`,
-            {
-                "x-chain": chain,
-            }
+            `/defi/price`,
+            { address },
+            options
         );
 
-        return price.value.toString();
+        return price.value;
     }
 
     async fetchTokenOverview(
         address: string,
-        chain: BirdeyeXChain = "solana"
+        options?: BirdeyeRequestOptions
     ): Promise<TokenOverview> {
         const token = await this.request<TokenOverview>(
-            `/defi/token_overview?address=${address}`,
-            {
-                "x-chain": chain,
-            }
+            `/defi/token_overview`,
+            { address },
+            options
         );
 
         return token;
@@ -519,67 +623,38 @@ export class BirdeyeClient {
 
     async fetchTokenSecurity(
         address: string,
-        chain: BirdeyeXChain = "solana"
+        options?: BirdeyeRequestOptions
     ): Promise<TokenSecurityData> {
-        // const cacheKey = `tokenSecurity_${address}`;
-        // const cachedData =
-        //     await this.getCachedData<TokenSecurityData>(cacheKey);
-        // if (cachedData) {
-        //     console.log(
-        //         `Returning cached token security data for ${address}.`
-        //     );
-        //     return cachedData;
-        // }
+        const security = await this.request<TokenSecurityData>(
+            `/defi/token_security`,
+            { address },
+            options
+        );
 
-        try {
-            const security = await this.request<TokenSecurityData>(
-                `/defi/token_security?address=${address}`,
-                {
-                    "x-chain": chain,
-                }
-            );
-
-            return security;
-        } catch (error) {
-            throw new Error("No token security data available");
-        }
+        return security;
     }
 
     async fetchTokenTradeData(
         address: string,
-        chain: BirdeyeXChain = "solana"
+        options?: BirdeyeRequestOptions
     ): Promise<TokenTradeData> {
-        // const cacheKey = `tokenTradeData_${address}`;
-        // const cachedData = await this.getCachedData<TokenTradeData>(cacheKey);
-        // if (cachedData) {
-        //     console.log(
-        //         `Returning cached token trade data for ${address}.`
-        //     );
-        //     return cachedData;
-        // }
-        try {
-            const tradeData = await this.request<TokenTradeData>(
-                `/defi/v3/token/trade-data/single?address=${address}`,
-                {
-                    "x-chain": chain,
-                }
-            );
+        const tradeData = await this.request<TokenTradeData>(
+            `/defi/v3/token/trade-data/single`,
+            { address },
+            options
+        );
 
-            return tradeData;
-        } catch (error) {
-            throw new Error("No token security data available");
-        }
+        return tradeData;
     }
 
     async fetchWalletTokenList(
         address: string,
-        chain: BirdeyeXChain = "solana"
+        options?: BirdeyeRequestOptions
     ) {
-        const tokenList = await this.request<TokenListResponse>(
-            `/v1/wallet/token_list?wallet=${address}`,
-            {
-                "x-chain": chain,
-            }
+        const tokenList = await this.request<WalletTokenList>(
+            `/v1/wallet/token_list`,
+            { wallet: address },
+            options
         );
 
         return tokenList;
@@ -587,26 +662,16 @@ export class BirdeyeClient {
 
     async fetchPortfolioValue(
         address: string,
-        chain: BirdeyeXChain = "solana"
+        options?: BirdeyeRequestOptions
     ): Promise<WalletPortfolio> {
         try {
-            // const cacheKey = `portfolio-${wallet}`;
-            // const cachedValue = this.cache.get<WalletPortfolio>(cacheKey);
-
-            // if (cachedValue) {
-            //     console.log("Cache hit for fetchPortfolioValue");
-            //     return cachedValue;
-            // }
-
-            console.log("Cache miss for fetchPortfolioValue", address);
-
             const portfolio: WalletPortfolio = {
                 totalUsd: "0",
                 totalSol: "0",
                 items: [],
             };
 
-            const tokenList = await this.fetchWalletTokenList(address, chain);
+            const tokenList = await this.fetchWalletTokenList(address, options);
 
             const totalUsd = new BigNumber(tokenList.totalUsd.toString());
 
@@ -638,7 +703,6 @@ export class BirdeyeClient {
                     .toNumber()
             );
 
-            // this.cache.set(cacheKey, portfolio);
             return portfolio;
         } catch (error) {
             console.error("Error fetching portfolio:", error);
@@ -661,6 +725,7 @@ type CodexBalance = {
     shiftedBalance: number;
 };
 
+//TODO: add caching
 export class CodexClient {
     static readonly url = "https://graph.codex.io/graphql";
 
@@ -669,7 +734,7 @@ export class CodexClient {
         query: string,
         variables?: any
     ): Promise<T> {
-        const res = await HttpClient.graphql<{ data: T }>(
+        const res = await http.graphql<{ data: T }>(
             this.url,
             query,
             variables,
@@ -784,17 +849,7 @@ export class CodexClient {
         chainId: number
     ): Promise<WalletPortfolio> {
         try {
-            // const cacheKey = `portfolio-${address}`;
-            // const cachedValue = this.cache.get<WalletPortfolio>(cacheKey);
-
-            // if (cachedValue) {
-            //     console.log("Cache hit for fetchPortfolioValue");
-            //     return cachedValue;
-            // }
-            // console.log("Cache miss for fetchPortfolioValue");
-
             // TODO: get token data
-
             const query = `
               query Balances($walletId: String!, $cursor: String) {
                 balances(input: { walletId: $walletId, cursor: $cursor }) {
@@ -889,9 +944,6 @@ export class CodexClient {
                 ),
             };
 
-            // Cache the portfolio for future requests
-            // this.cache.set(cacheKey, portfolio, 60 * 1000); // Cache for 1 minute
-
             return portfolio;
         } catch (error) {
             console.error("Error fetching portfolio:", error);
@@ -923,7 +975,7 @@ export class TrustScoreBeClient {
     ) {}
 
     async request(path: string, body: any) {
-        return HttpClient.post.json(`${this.url}${path}`, body, {
+        return http.post.json(`${this.url}${path}`, body, {
             headers: {
                 Authorization: `Bearer ${this.apiKey}`,
             },
@@ -970,7 +1022,7 @@ export class Sonar {
     ) {}
 
     async request(path: string, body: any) {
-        return HttpClient.post.json(`${this.url}${path}`, body, {
+        return http.post.json(`${this.url}${path}`, body, {
             headers: {
                 "x-api-key": this.apiKey,
             },
@@ -1018,4 +1070,21 @@ export class Sonar {
             );
         }
     }
+}
+
+// todo: maybe move this into the cacheManager
+const units = {
+    ms: 1,
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000,
+};
+
+function parseTimeToMs(timeStr: string) {
+    const match = timeStr.match(/^(\d+)([a-z]+)$/i);
+    if (!match) return null;
+
+    const [_, value, unit] = match;
+    return units[unit.toLowerCase()] * parseInt(value);
 }

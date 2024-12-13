@@ -1,29 +1,16 @@
 import { getAssociatedTokenAddress } from "@solana/spl-token";
 import {
-    BlockhashWithExpiryBlockHeight,
     Connection,
     Keypair,
     PublicKey,
     RpcResponseAndContext,
     SimulatedTransactionResponse,
-    TokenAmount,
     VersionedTransaction,
 } from "@solana/web3.js";
-import { settings } from "@ai16z/eliza";
 import { JupiterClient } from "../clients";
 import { SOL_ADDRESS } from "../constants";
 
-const SLIPPAGE = settings.SLIPPAGE;
-
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-export async function delayedCall<T>(
-    method: (...args: any[]) => Promise<T>,
-    ...args: any[]
-): Promise<T> {
-    await delay(150);
-    return method(...args);
-}
 
 export async function getTokenDecimals(
     connection: Connection,
@@ -74,8 +61,9 @@ export const executeSwap = async (
     type: "buy" | "sell"
 ) => {
     try {
-        const latestBlockhash: BlockhashWithExpiryBlockHeight =
-            await delayedCall(connection.getLatestBlockhash.bind(connection));
+        await delay(150); // ??
+
+        const latestBlockhash = await connection.getLatestBlockhash();
 
         const signature = await connection.sendTransaction(transaction, {
             skipPreflight: false,
@@ -112,36 +100,52 @@ export const executeSwap = async (
     }
 };
 
-export const Sell = async (
+async function getTokenBalanceAndInfo(
     connection: Connection,
     baseMint: PublicKey,
     wallet: Keypair
-) => {
-    try {
-        const tokenAta = await delayedCall(
-            getAssociatedTokenAddress,
-            baseMint,
-            wallet.publicKey
+) {
+    await delay(150); // ??
+
+    const tokenAta = await getAssociatedTokenAddress(
+        baseMint,
+        wallet.publicKey
+    );
+
+    await delay(150); // ??
+
+    const tokenBalInfo = await connection.getTokenAccountBalance(tokenAta);
+
+    if (!tokenBalInfo) {
+        console.log("Balance incorrect");
+        // return null;
+    }
+
+    const tokenBalance = tokenBalInfo.value.amount;
+
+    if (tokenBalance === "0") {
+        console.warn(
+            `No token balance to sell with wallet ${wallet.publicKey}`
         );
+    }
 
-        const tokenBalInfo: RpcResponseAndContext<TokenAmount> =
-            await delayedCall(
-                connection.getTokenAccountBalance.bind(connection),
-                tokenAta
-            );
+    return {
+        tokenBalInfo,
+        tokenBalance,
+    };
+}
 
-        if (!tokenBalInfo) {
-            console.log("Balance incorrect");
-            return null;
-        }
-
-        const tokenBalance = tokenBalInfo.value.amount;
-
-        if (tokenBalance === "0") {
-            console.warn(
-                `No token balance to sell with wallet ${wallet.publicKey}`
-            );
-        }
+export async function sell(
+    connection: Connection,
+    baseMint: PublicKey,
+    wallet: Keypair
+) {
+    try {
+        const { tokenBalance } = await getTokenBalanceAndInfo(
+            connection,
+            baseMint,
+            wallet
+        );
 
         const sellTransaction = await getSwapTxWithWithJupiter(
             wallet,
@@ -156,11 +160,8 @@ export const Sell = async (
             return null;
         }
 
-        const simulateResult: RpcResponseAndContext<SimulatedTransactionResponse> =
-            await delayedCall(
-                connection.simulateTransaction.bind(connection),
-                sellTransaction
-            );
+        const simulateResult =
+            await connection.simulateTransaction(sellTransaction);
 
         if (simulateResult.value.err) {
             console.log("Sell Simulation failed", simulateResult.value.err);
@@ -172,37 +173,19 @@ export const Sell = async (
     } catch (error) {
         console.log(error);
     }
-};
+}
 
-export const Buy = async (
+export async function buy(
     connection: Connection,
     baseMint: PublicKey,
     wallet: Keypair
-) => {
+) {
     try {
-        const tokenAta = await delayedCall(
-            getAssociatedTokenAddress,
+        const { tokenBalance } = await getTokenBalanceAndInfo(
+            connection,
             baseMint,
-            wallet.publicKey
+            wallet
         );
-
-        const tokenBalInfo: RpcResponseAndContext<TokenAmount> =
-            await delayedCall(
-                connection.getTokenAccountBalance.bind(connection),
-                tokenAta
-            );
-
-        if (!tokenBalInfo) {
-            console.log("Balance incorrect");
-            return null;
-        }
-
-        const tokenBalance = tokenBalInfo.value.amount;
-        if (tokenBalance === "0") {
-            console.warn(
-                `No token balance to sell with wallet ${wallet.publicKey}`
-            );
-        }
 
         const buyTransaction = await getSwapTxWithWithJupiter(
             wallet,
@@ -218,10 +201,7 @@ export const Buy = async (
         }
 
         const simulateResult: RpcResponseAndContext<SimulatedTransactionResponse> =
-            await delayedCall(
-                connection.simulateTransaction.bind(connection),
-                buyTransaction
-            );
+            await connection.simulateTransaction(buyTransaction);
 
         if (simulateResult.value.err) {
             console.log("Buy Simulation failed", simulateResult.value.err);
@@ -233,7 +213,7 @@ export const Buy = async (
     } catch (error) {
         console.log(error);
     }
-};
+}
 
 export const getSwapTxWithWithJupiter = async (
     wallet: Keypair,

@@ -3,7 +3,6 @@ import {
     RecommenderMetrics,
     TokenPerformance,
 } from "@ai16z/plugin-trustdb";
-import { TokenOverview } from "./clients";
 
 export type TokenSecurityData = {
     ownerBalance: string;
@@ -365,4 +364,12 @@ export type TokenRecommendationSummary = {
     averageRiskScore: number;
     averageConsistencyScore: number;
     recommenders: RecommenderData[];
+};
+
+export type TokenOverview = {
+    address: string;
+    name: string;
+    symbol: string;
+    decimals: number;
+    logoUri: string;
 };

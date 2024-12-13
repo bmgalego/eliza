@@ -66,6 +66,7 @@ export const executeSwapForDAO: Action = {
             const connection = new Connection(
                 runtime.getSetting("RPC_URL") as string
             );
+
             const authority = Keypair.fromSecretKey(
                 Uint8Array.from(
                     Buffer.from(
@@ -75,6 +76,7 @@ export const executeSwapForDAO: Action = {
                     )
                 )
             );
+
             const daoMint = new PublicKey(runtime.getSetting("DAO_MINT")!); // DAO mint address
 
             // Derive PDAs
@@ -82,6 +84,7 @@ export const executeSwapForDAO: Action = {
                 [Buffer.from("state"), daoMint.toBuffer()],
                 authority.publicKey
             );
+
             const [walletPDA] = await PublicKey.findProgramAddress(
                 [Buffer.from("wallet"), daoMint.toBuffer()],
                 authority.publicKey
@@ -93,9 +96,11 @@ export const executeSwapForDAO: Action = {
                 outputToken as string,
                 amount as number
             );
+
             console.log("Swap Quote:", quoteData);
 
             const confirmSwap = await promptConfirmation();
+
             if (!confirmSwap) {
                 console.log("Swap canceled by user");
                 return false;

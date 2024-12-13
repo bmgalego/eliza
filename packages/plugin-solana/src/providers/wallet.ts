@@ -2,18 +2,14 @@ import { IAgentRuntime, Memory, Provider, State } from "@ai16z/eliza";
 import { PublicKey } from "@solana/web3.js";
 import BigNumber from "bignumber.js";
 import { Prices, WalletPortfolio, WalletPortfolioItem } from "../types";
-import { BirdeyeClient, CodexClient, CoingeckoClient } from "../clients";
+import { BirdeyeClient, CoingeckoClient } from "../clients";
 
 export class WalletProvider {
     static createFromRuntime(runtime: IAgentRuntime): WalletProvider {
-        const address =
-            runtime.getSetting("SOLANA_PUBLIC_KEY") ??
-            runtime.getSetting("WALLET_PUBLIC_KEY");
+        const address = runtime.getSetting("SOLANA_PUBLIC_KEY");
 
         if (!address) {
-            throw new Error(
-                "SOLANA_PUBLIC_KEY not configured, skipping wallet injection"
-            );
+            throw new Error("SOLANA_PUBLIC_KEY not configured");
         }
 
         return new this(runtime, new PublicKey(address));
@@ -41,7 +37,10 @@ export class WalletProvider {
     async fetchPortfolioValue(): Promise<WalletPortfolio> {
         return await BirdeyeClient.createFromRuntime(
             this.runtime
-        ).fetchPortfolioValue(this.walletPublicKey.toBase58());
+        ).fetchPortfolioValue(this.walletPublicKey.toBase58(), {
+            chain: "solana",
+            expires: "5m", // TODO: configure this
+        });
     }
 
     async getTokensInWallet(): Promise<WalletPortfolioItem[]> {

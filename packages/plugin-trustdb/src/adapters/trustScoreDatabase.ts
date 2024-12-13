@@ -254,11 +254,10 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
             ON CONFLICT(address) DO NOTHING;
         `;
         try {
-            const id = recommender.id || uuidv4();
             const result = this.db
                 .prepare(sql)
                 .run(
-                    id,
+                    recommender.id,
                     recommender.address,
                     recommender.solanaPubkey || null,
                     recommender.telegramId || null,
@@ -266,7 +265,7 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
                     recommender.twitterId || null,
                     recommender.ip || null
                 );
-            return result.changes > 0 ? id : null;
+            return result.changes > 0 ? recommender.id : null;
         } catch (error) {
             console.error("Error adding recommender:", error);
             return null;
@@ -434,9 +433,10 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
         recommenderId: string
     ): Promise<RecommenderMetrics | null> {
         const sql = `SELECT * FROM recommender_metrics WHERE recommender_id = ?;`;
-        const row = this.db.prepare(sql).get(recommenderId) as
-            | RecommenderMetricsRow
-            | undefined;
+        const row = this.db
+            .prepare<[string], RecommenderMetricsRow>(sql)
+            .get(recommenderId);
+
         if (!row) return null;
 
         return {
@@ -525,7 +525,7 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
      */
     async updateRecommenderMetrics(metrics: RecommenderMetrics): Promise<void> {
         // Log current metrics before updating
-        this.logRecommenderMetricsHistory(metrics.recommenderId);
+        await this.logRecommenderMetricsHistory(metrics.recommenderId);
 
         const sql = `
             UPDATE recommender_metrics
@@ -567,7 +567,7 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
     async upsertTokenPerformance(
         performance: TokenPerformance
     ): Promise<boolean> {
-        const validationTrust = this.calculateValidationTrust(
+        const validationTrust = await this.calculateValidationTrust(
             performance.tokenAddress
         );
 
@@ -591,7 +591,7 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
                 balance,
                 initial_market_cap,
                 last_updated
-            )  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            )  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(token_address) DO UPDATE SET
                 symbol = excluded.symbol,
                 price_change_24h = excluded.price_change_24h,
@@ -609,7 +609,7 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
                 validation_trust = excluded.validation_trust,
                 balance = excluded.balance,
                 initial_market_cap = excluded.initial_market_cap,
-                last_updated = CURRENT_TIMESTAMP;
+                last_updated = excluded.last_updated;
         `;
         try {
             this.db
@@ -631,7 +631,8 @@ export class TrustScoreDatabase implements TrustScoreAdapter {
                     performance.suspiciousVolume ? 1 : 0,
                     validationTrust,
                     performance.balance,
-                    performance.initialMarketCap
+                    performance.initialMarketCap,
+                    performance.lastUpdated.getTime()
                 );
             console.log(
                 `Upserted token performance for ${performance.tokenAddress}`
