@@ -136,10 +136,12 @@ Thread of Tweets You Are Replying To:
 export class MessageManager {
     public bot: Telegraf<Context>;
     private runtime: IAgentRuntime;
+    private triggerPhrase: string;
 
     constructor(bot: Telegraf<Context>, runtime: IAgentRuntime) {
         this.bot = bot;
         this.runtime = runtime;
+        this.triggerPhrase = this.runtime.getSetting("TRIGGERPHRASE");
     }
 
     // Process image messages and generate descriptions
@@ -192,6 +194,13 @@ export class MessageManager {
             message.text?.includes(`@${this.bot.botInfo?.username}`)
         ) {
             return true;
+        }
+        // if text does not contain trigger phrase, do not respond
+        if (
+            "text" in message &&
+            !message.text?.toLowerCase().includes(this.triggerPhrase)
+        ) {
+            return false;
         }
 
         // Respond to private chats

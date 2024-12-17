@@ -6,12 +6,15 @@ export class TelegramClient {
     private bot: Telegraf<Context>;
     private runtime: IAgentRuntime;
     private messageManager: MessageManager;
+    private allowedRoomId: number;
 
     constructor(runtime: IAgentRuntime, botToken: string) {
         elizaLogger.log("📱 Constructing new TelegramClient...");
         this.runtime = runtime;
         this.bot = new Telegraf(botToken);
         this.messageManager = new MessageManager(this.bot, this.runtime);
+        this.allowedRoomId = parseFloat(this.runtime.getSetting("ROOMID"));
+
         elizaLogger.log("✅ TelegramClient constructor completed");
     }
 
@@ -45,6 +48,16 @@ export class TelegramClient {
 
         this.bot.on("message", async (ctx) => {
             try {
+                const chatId = ctx.chat.id;
+                if (chatId !== this.allowedRoomId) {
+                    // Ignore messages from other chats
+                    console.log("Ignoring message from chat:", chatId);
+                    return;
+                }
+                elizaLogger.log(
+                    `✅ Message received from allowed room: ${chatId}`
+                );
+
                 await this.messageManager.handleMessage(ctx);
             } catch (error) {
                 elizaLogger.error("❌ Error handling message:", error);
