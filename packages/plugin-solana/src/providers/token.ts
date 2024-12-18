@@ -27,7 +27,7 @@ export class TokenProvider {
             expires: "5m",
         });
 
-        const prices = await CoingeckoClient.createFromRuntime(
+        const prices = await BirdeyeClient.createFromRuntime(
             this.runtime
         ).fetchPrices();
 

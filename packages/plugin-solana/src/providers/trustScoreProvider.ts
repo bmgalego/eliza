@@ -21,6 +21,7 @@ import {
 import { IAgentRuntime, Memory, Provider, State } from "@ai16z/eliza";
 import { v4 as uuidv4 } from "uuid";
 import {
+    BirdeyeClient,
     CodexClient,
     CoingeckoClient,
     Sonar,
@@ -358,7 +359,7 @@ export class TrustScoreManager {
 
         let tokensBalance = 0;
 
-        const prices = await CoingeckoClient.createFromRuntime(
+        const prices = await BirdeyeClient.createFromRuntime(
             this.runtime
         ).fetchPrices();
 
@@ -500,7 +501,7 @@ export class TrustScoreManager {
         const processedData: ProcessedTokenData =
             await tokenProvider.getProcessedTokenData();
 
-        const prices = await CoingeckoClient.createFromRuntime(
+        const prices = await BirdeyeClient.createFromRuntime(
             this.runtime
         ).fetchPrices();
 

@@ -14,7 +14,12 @@ import {
 } from "./types";
 import { toBN } from "./bignumber";
 import { CacheOptions, IAgentRuntime, ICacheManager } from "@ai16z/eliza";
-import { SOL_ADDRESS, SOLANA_NETWORK_ID } from "./constants";
+import {
+    ETH_ADDRESS,
+    SOL_ADDRESS,
+    SOLANA_NETWORK_ID,
+    BTC_ADDRESS,
+} from "./constants";
 import { Recommender } from "@ai16z/plugin-trustdb";
 
 let nextRpcRequestId = 1;
@@ -546,11 +551,15 @@ export class CoingeckoClient {
         return res;
     }
 
-    async fetchPrices(): Promise<Prices> {
-        const prices = await this.request<Prices>("simple/price", {
-            ids: "solana,bitcoin,ethereum",
-            vs_currencies: "usd",
-        });
+    async fetchPrices(options?: CoingeckoOptions): Promise<Prices> {
+        const prices = await this.request<Prices>(
+            "simple/price",
+            {
+                ids: "solana,bitcoin,ethereum",
+                vs_currencies: "usd",
+            },
+            options
+        );
 
         return prices;
     }
@@ -668,12 +677,29 @@ export class BirdeyeClient {
         options?: BirdeyeRequestOptions
     ): Promise<number> {
         const price = await this.request<{ value: number }>(
-            `defi/price`,
+            "defi/price",
             { address },
             options
         );
 
         return price.value;
+    }
+
+    async fetchPrices(): Promise<Prices> {
+        const prices = await this.request<Record<string, { value: number }>>(
+            "defi/multi_price",
+            { list_address: [SOL_ADDRESS, ETH_ADDRESS, BTC_ADDRESS].join(",") },
+            {
+                chain: "solana",
+                expires: "5m",
+            }
+        );
+
+        return {
+            bitcoin: { usd: prices[BTC_ADDRESS].value.toString() },
+            ethereum: { usd: prices[ETH_ADDRESS].value.toString() },
+            solana: { usd: prices[SOL_ADDRESS].value.toString() },
+        };
     }
 
     async fetchTokenOverview(
@@ -823,11 +849,11 @@ export class CodexClient {
     constructor(private readonly apiKey: string) {}
 
     static createFromRuntime(runtime: IAgentRuntime) {
-        const apiKey = runtime.getSetting("CODEX_API_KEY") ?? "";
+        const apiKey = runtime.getSetting("CODEX_API_KEY");
 
-        // if (!apiKey) {
-        //     throw new Error("missing CODEX_API_KEY");
-        // }
+        if (!apiKey) {
+            throw new Error("missing CODEX_API_KEY");
+        }
 
         return new this(apiKey);
     }

@@ -24,7 +24,7 @@ export class WalletProvider {
         try {
             const [portfolio, prices] = await Promise.all([
                 this.fetchPortfolioValue(),
-                CoingeckoClient.createFromRuntime(this.runtime).fetchPrices(),
+                BirdeyeClient.createFromRuntime(this.runtime).fetchPrices(),
             ]);
 
             return this.formatPortfolio(portfolio, prices);
