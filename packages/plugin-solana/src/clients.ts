@@ -1121,7 +1121,7 @@ export class Sonar {
         isSimulation: boolean,
         sell_recommender_id: string,
         initial_mc: number,
-        Wallet_address: string
+        wallet_address: string
     ) {
         try {
             const result = await this.request(`/ai16z-sol/startProcess`, {
@@ -1130,7 +1130,7 @@ export class Sonar {
                 isSimulation,
                 initial_mc,
                 sell_recommender_id,
-                Wallet_address,
+                wallet_address,
             });
 
             console.log("Received response:", result);

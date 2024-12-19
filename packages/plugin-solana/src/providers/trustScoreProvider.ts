@@ -39,7 +39,7 @@ export class TrustScoreManager {
 
     private readonly backend?: TrustScoreBeClient;
     private readonly sonar?: Sonar;
-    private wallet: string;
+    private wallet_address: string;
 
     private DECAY_RATE = 0.95;
     private MAX_DECAY_DAYS = 30;
@@ -48,7 +48,7 @@ export class TrustScoreManager {
         this.runtime = runtime;
         this.trustScoreDb = trustScoreDb;
         this.connection = new Connection(runtime.getSetting("RPC_URL")!);
-        this.wallet = runtime.getSetting("WALLET_PUBLIC_KEY")!;
+        this.wallet_address = runtime.getSetting("WALLET_PUBLIC_KEY")!;
 
         try {
             this.backend = TrustScoreBeClient.createFromRuntime(this.runtime);
@@ -474,7 +474,7 @@ export class TrustScoreManager {
         await this.simulationSellingService.processTokenPerformance(
             tokenAddress,
             recommender.id,
-            this.wallet
+            this.wallet_address
         );
 
         // api call to update trade performance

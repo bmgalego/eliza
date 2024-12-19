@@ -16,6 +16,7 @@ export class SimulationSellingService {
     private readonly sonar?: Sonar;
 
     private runningProcesses: Set<string> = new Set();
+    private wallet_address: string;
 
     constructor(
         runtime: IAgentRuntime,
@@ -29,6 +30,7 @@ export class SimulationSellingService {
 
         this.backend = backend;
         this.sonar = sonar;
+        this.wallet_address = runtime.getSetting("WALLET_PUBLIC_KEY")!;
 
         this.initializeRabbitMQ(runtime.getSetting("AMQP_URL")!);
     }
@@ -45,7 +47,10 @@ export class SimulationSellingService {
         const tokenPerformances =
             await this.trustScoreDb.getAllTokenPerformancesWithBalance();
 
-        await this.processTokenPerformances(tokenPerformances);
+        await this.processTokenPerformances(
+            tokenPerformances,
+            this.wallet_address
+        );
     }
 
     /**
@@ -172,7 +177,8 @@ export class SimulationSellingService {
     }
 
     private async processTokenPerformances(
-        tokenPerformances: TokenPerformance[]
+        tokenPerformances: TokenPerformance[],
+        wallet_address: string
     ) {
         //  To Do: logic when to sell and how much
         console.log("Deciding when to sell and how much...");
@@ -202,7 +208,8 @@ export class SimulationSellingService {
                     tokenPerformance.balance,
                     true,
                     tokenRecommendation.recommenderId,
-                    tokenPerformance.initialMarketCap
+                    tokenPerformance.initialMarketCap,
+                    wallet_address
                 );
 
                 if (process) {
@@ -216,7 +223,7 @@ export class SimulationSellingService {
     public async processTokenPerformance(
         tokenAddress: string,
         recommenderId: string,
-        WalletAddress: string
+        walletAddress: string
     ) {
         try {
             const runningProcesses = this.runningProcesses;
@@ -236,7 +243,7 @@ export class SimulationSellingService {
                 true,
                 recommenderId,
                 tokenPerformance.initialMarketCap,
-                WalletAddress
+                walletAddress
             );
 
             if (process) {
