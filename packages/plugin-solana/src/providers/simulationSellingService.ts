@@ -215,7 +215,8 @@ export class SimulationSellingService {
 
     public async processTokenPerformance(
         tokenAddress: string,
-        recommenderId: string
+        recommenderId: string,
+        WalletAddress: string
     ) {
         try {
             const runningProcesses = this.runningProcesses;
@@ -234,7 +235,8 @@ export class SimulationSellingService {
                 tokenPerformance.balance,
                 true,
                 recommenderId,
-                tokenPerformance.initialMarketCap
+                tokenPerformance.initialMarketCap,
+                WalletAddress
             );
 
             if (process) {
