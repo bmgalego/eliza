@@ -1,6 +1,7 @@
 import {
     getAssociatedTokenAddressSync,
     createTransferInstruction,
+    createAssociatedTokenAccountInstruction,
 } from "@solana/spl-token";
 import { elizaLogger, settings } from "@ai16z/eliza";
 
@@ -143,6 +144,8 @@ export default {
                 true
             );
 
+            if (!senderKeypair) return false;
+
             const connection = new Connection(settings.RPC_URL!);
 
             const mintPubkey = new PublicKey(content.tokenAddress);
@@ -176,8 +179,6 @@ export default {
             const recipientATAInfo =
                 await connection.getAccountInfo(recipientATA);
             if (!recipientATAInfo) {
-                const { createAssociatedTokenAccountInstruction } =
-                    await import("@solana/spl-token");
                 instructions.push(
                     createAssociatedTokenAccountInstruction(
                         senderKeypair.publicKey,

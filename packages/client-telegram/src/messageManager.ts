@@ -484,13 +484,6 @@ export class MessageManager {
             elizaLogger.info(`Bot mentioned`);
             return true;
         }
-        // if text does not contain trigger phrase, do not respond
-        if (
-            "text" in message &&
-            !message.text?.toLowerCase().includes(this.triggerPhrase)
-        ) {
-            return false;
-        }
 
         // Respond to private chats
         if (message.chat.type === "private") {
