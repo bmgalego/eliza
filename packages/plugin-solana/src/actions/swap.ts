@@ -367,47 +367,6 @@ export const executeSwap: Action = {
                 );
             }
 
-            // TODO: use real db?
-
-            // const module = await import("better-sqlite3");
-            // const Database = module.default;
-            // const trustScoreDb = new TrustScoreDatabase(
-            //     new Database(":memory:")
-            // );
-
-            // const trustScoreDatabase = new TrustScoreManager(
-            //     runtime,
-            //     trustScoreDb
-            // );
-
-            // // add or get recommender
-            // const uuid = uuidv4();
-            // const recommender = await trustScoreDb.getOrCreateRecommender({
-            //     id: uuid,
-            //     address: walletPublicKey.toString(),
-            //     solanaPubkey: walletPublicKey.toString(),
-            // });
-
-            // if (type === "buy") {
-            //     // save the trade
-            //     await trustScoreDatabase.createTradePerformance({
-            //         recommender,
-            //         tokenAddress: response.outputTokenCA,
-            //         buyAmount: response.amount,
-            //         isSimulation: false,
-            //         timestamp: new Date().toISOString(),
-            //     });
-            // } else if (type === "sell") {
-            //     // save the trade
-            //     await trustScoreDatabase.updateSellDetails({
-            //         tokenAddress: response.inputTokenCA,
-            //         amount: response.amount,
-            //         timestamp: new Date().toISOString(),
-            //         recommender,
-            //         isSimulation: false,
-            //     });
-            // }
-
             console.log("Swap completed successfully!");
             console.log(`Transaction ID: ${txid}`);
 
