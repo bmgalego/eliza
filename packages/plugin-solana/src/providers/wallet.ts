@@ -17,7 +17,7 @@ export class WalletProvider {
 
     constructor(
         private runtime: IAgentRuntime,
-        private walletPublicKey: PublicKey
+        public readonly publicKey: PublicKey
     ) {}
 
     async getFormattedPortfolio(): Promise<string> {
@@ -37,7 +37,7 @@ export class WalletProvider {
     async fetchPortfolioValue(): Promise<WalletPortfolio> {
         return await BirdeyeClient.createFromRuntime(
             this.runtime
-        ).fetchPortfolioValue(this.walletPublicKey.toBase58(), {
+        ).fetchPortfolioValue(this.publicKey.toBase58(), {
             chain: "solana",
             expires: "5m", // TODO: configure this
         });
@@ -67,7 +67,7 @@ export class WalletProvider {
 
     formatPortfolio(portfolio: WalletPortfolio, prices: Prices): string {
         let output = "";
-        output += `Wallet Address: ${this.walletPublicKey.toBase58()}\n\n`;
+        output += `Wallet Address: ${this.publicKey.toBase58()}\n\n`;
 
         const totalUsdFormatted = new BigNumber(portfolio.totalUsd).toFixed(2);
         const totalSolFormatted = portfolio.totalSol;

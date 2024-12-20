@@ -8,6 +8,7 @@ import {
 import BigNumber from "bignumber.js";
 import {
     ActionExample,
+    generateObjectDeprecated,
     HandlerCallback,
     IAgentRuntime,
     Memory,
@@ -15,8 +16,8 @@ import {
     State,
     type Action,
     composeContext,
-    generateObjectDEPRECATED,
 } from "@ai16z/eliza";
+import { getWalletKey } from "../keypairUtils.ts";
 import { walletProvider, WalletProvider } from "../providers/wallet.ts";
 import { getTokenDecimals } from "./swapUtils.ts";
 import { JupiterClient } from "../clients.ts";
@@ -116,7 +117,6 @@ Respond with a JSON markdown block containing only the extracted values. Use nul
 async function getTokensInWallet(runtime: IAgentRuntime) {
     const walletInfo =
         await WalletProvider.createFromRuntime(runtime).fetchPortfolioValue();
-
     const items = walletInfo.items;
     return items;
 }
@@ -172,15 +172,14 @@ export const executeSwap: Action = {
             template: swapTemplate,
         });
 
-        const response = await generateObjectDEPRECATED({
+        const response = await generateObjectDeprecated({
             runtime,
             context: swapContext,
             modelClass: ModelClass.LARGE,
         });
 
         console.log("Response:", response);
-        const type =
-            response.inputTokenSymbol?.toUpperCase() === "SOL" ? "buy" : "sell";
+        // const type = response.inputTokenSymbol?.toUpperCase() === "SOL" ? "buy" : "sell";
 
         // Add SOL handling logic
         if (response.inputTokenSymbol?.toUpperCase() === "SOL") {
@@ -258,12 +257,15 @@ export const executeSwap: Action = {
             return true;
         }
         try {
-            const connection = new Connection(runtime.getSetting("RPC_URL")!);
-
-            const walletPublicKey = new PublicKey(
-                runtime.getSetting("SOLANA_PUBLIC_KEY") ??
-                    runtime.getSetting("WALLET_PUBLIC_KEY")!
+            const connection = new Connection(
+                "https://api.mainnet-beta.solana.com"
             );
+            const { publicKey: walletPublicKey } = await getWalletKey(
+                runtime,
+                false
+            );
+
+            // const provider = new WalletProvider(connection, walletPublicKey);
 
             console.log("Wallet Public Key:", walletPublicKey);
             console.log("inputTokenSymbol:", response.inputTokenCA);
@@ -272,7 +274,7 @@ export const executeSwap: Action = {
 
             const swapResult = await swapToken(
                 connection,
-                walletPublicKey,
+                walletPublicKey!,
                 response.inputTokenCA as string,
                 response.outputTokenCA as string,
                 response.amount as number
@@ -287,51 +289,18 @@ export const executeSwap: Action = {
                 VersionedTransaction.deserialize(transactionBuf);
 
             console.log("Preparing to sign transaction...");
-            const privateKeyString =
-                runtime.getSetting("SOLANA_PRIVATE_KEY") ??
-                runtime.getSetting("WALLET_PRIVATE_KEY")!;
-
-            // Handle different private key formats
-            let secretKey: Uint8Array;
-            try {
-                // First try to decode as base58
-                secretKey = bs58.decode(privateKeyString);
-                // eslint-disable-next-line
-            } catch (e) {
-                try {
-                    // If that fails, try base64
-                    secretKey = Uint8Array.from(
-                        Buffer.from(privateKeyString, "base64")
-                    );
-                    // eslint-disable-next-line
-                } catch (e2) {
-                    throw new Error("Invalid private key format");
-                }
-            }
-
-            // Verify the key length
-            if (secretKey.length !== 64) {
-                console.error("Invalid key length:", secretKey.length);
-                throw new Error(
-                    `Invalid private key length: ${secretKey.length}. Expected 64 bytes.`
-                );
-            }
 
             console.log("Creating keypair...");
-            const keypair = Keypair.fromSecretKey(secretKey);
-
+            const { keypair } = await getWalletKey(runtime, true);
             // Verify the public key matches what we expect
-            const expectedPublicKey =
-                runtime.getSetting("SOLANA_PUBLIC_KEY") ??
-                runtime.getSetting("WALLET_PUBLIC_KEY");
-            if (keypair.publicKey.toBase58() !== expectedPublicKey) {
+            if (keypair!.publicKey.toBase58() !== walletPublicKey!.toBase58()) {
                 throw new Error(
                     "Generated public key doesn't match expected public key"
                 );
             }
 
             console.log("Signing transaction...");
-            transaction.sign([keypair]);
+            transaction.sign([keypair!]);
 
             console.log("Sending transaction...");
 

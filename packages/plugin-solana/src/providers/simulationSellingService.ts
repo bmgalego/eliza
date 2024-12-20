@@ -4,19 +4,21 @@ import * as amqp from "amqplib";
 import { Sonar, TrustScoreBeClient } from "../clients.ts";
 import { TrustScoreManager } from "./trustScoreProvider.ts";
 import { SellDecision } from "../types.ts";
+import { WalletProvider } from "./wallet.ts";
 
 export class SimulationSellingService {
     private readonly trustManager: TrustScoreManager;
     private readonly trustScoreDb: TrustScoreDatabase;
 
-    private amqpConnection: amqp.Connection;
-    private amqpChannel: amqp.Channel;
-
     private readonly backend?: TrustScoreBeClient;
     private readonly sonar?: Sonar;
 
+    private amqpConnection?: amqp.Connection;
+    private amqpChannel?: amqp.Channel;
+
     private runningProcesses: Set<string> = new Set();
-    private wallet_address: string;
+
+    private wallet: WalletProvider;
 
     constructor(
         runtime: IAgentRuntime,
@@ -30,9 +32,12 @@ export class SimulationSellingService {
 
         this.backend = backend;
         this.sonar = sonar;
-        this.wallet_address = runtime.getSetting("WALLET_PUBLIC_KEY")!;
 
-        this.initializeRabbitMQ(runtime.getSetting("AMQP_URL")!);
+        this.wallet = WalletProvider.createFromRuntime(runtime);
+
+        const amqpUrl = runtime.getSetting("AMQP_URL") ?? undefined;
+        if (amqpUrl) this.initializeRabbitMQ(amqpUrl);
+        // this.runtime = runtime;
     }
 
     public async startService() {
@@ -49,7 +54,7 @@ export class SimulationSellingService {
 
         await this.processTokenPerformances(
             tokenPerformances,
-            this.wallet_address
+            this.wallet.publicKey.toBase58()
         );
     }
 
@@ -59,11 +64,11 @@ export class SimulationSellingService {
      */
     private async initializeRabbitMQ(amqpUrl: string) {
         try {
-            // this.amqpConnection = await amqp.connect(amqpUrl);
-            // this.amqpChannel = await this.amqpConnection.createChannel();
-            // console.log("Connected to RabbitMQ");
-            // // Start consuming messages
-            // this.consumeMessages();
+            this.amqpConnection = await amqp.connect(amqpUrl);
+            this.amqpChannel = await this.amqpConnection.createChannel();
+            console.log("Connected to RabbitMQ");
+            // Start consuming messages
+            this.consumeMessages();
         } catch (error) {
             console.error("Failed to connect to RabbitMQ:", error);
         }
@@ -178,7 +183,7 @@ export class SimulationSellingService {
 
     private async processTokenPerformances(
         tokenPerformances: TokenPerformance[],
-        wallet_address: string
+        walletAddress: string
     ) {
         //  To Do: logic when to sell and how much
         console.log("Deciding when to sell and how much...");
@@ -191,13 +196,6 @@ export class SimulationSellingService {
         // start the process in the sonar backend
         await Promise.all(
             tokenPerformances.map(async (tokenPerformance) => {
-                // // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                // const tokenProvider = new TokenProvider(
-                //     tokenPerformance.tokenAddress,
-                //     this.runtime.cacheManager
-                // );
-                // const shouldTrade = await tokenProvider.shouldTradeToken();
-                // if (shouldTrade) {
                 const [tokenRecommendation] =
                     await this.trustScoreDb.getRecommendationsByToken(
                         tokenPerformance.tokenAddress
@@ -209,7 +207,7 @@ export class SimulationSellingService {
                     true,
                     tokenRecommendation.recommenderId,
                     tokenPerformance.initialMarketCap,
-                    wallet_address
+                    walletAddress
                 );
 
                 if (process) {

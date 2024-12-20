@@ -142,6 +142,7 @@ export class AgentRuntime implements IAgentRuntime {
     services: Map<ServiceType, Service> = new Map();
     memoryManagers: Map<string, IMemoryManager> = new Map();
     cacheManager: ICacheManager;
+    clients: Record<string, any>;
 
     registerMemoryManager(manager: IMemoryManager): void {
         if (!manager.tableName) {
@@ -410,6 +411,25 @@ export class AgentRuntime implements IAgentRuntime {
         }
     }
 
+    async stop() {
+      elizaLogger.debug('runtime::stop - character', this.character)
+      // stop services, they don't have a stop function
+        // just initialize
+
+      // plugins
+        // have actions, providers, evaluators (no start/stop)
+        // services (just initialized), clients
+
+      // client have a start
+      for(const cStr in this.clients) {
+        const c = this.clients[cStr]
+        elizaLogger.log('runtime::stop - requesting', cStr, 'client stop for', this.character.name)
+        c.stop()
+      }
+      // we don't need to unregister with directClient
+      // don't need to worry about knowledge
+    }
+
     /**
      * Processes character knowledge by creating document memories and fragment memories.
      * This function takes an array of knowledge items, creates a document memory for each item if it doesn't exist,
@@ -577,7 +597,8 @@ export class AgentRuntime implements IAgentRuntime {
      * Evaluate the message and state using the registered evaluators.
      * @param message The message to evaluate.
      * @param state The state of the agent.
-     * @param didRespond Whether the agent responded to the message.
+     * @param didRespond Whether the agent responded to the message.~
+     * @param callback The handler callback
      * @returns The results of the evaluation.
      */
     async evaluate(

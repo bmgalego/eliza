@@ -6,6 +6,7 @@ import {
 } from "@ai16z/eliza";
 import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import { getQuote } from "./swapUtils.ts";
+import { getWalletKey } from "../keypairUtils.ts";
 
 async function invokeSwapDao(
     connection: Connection,
@@ -67,27 +68,19 @@ export const executeSwapForDAO: Action = {
                 runtime.getSetting("RPC_URL") as string
             );
 
-            const authority = Keypair.fromSecretKey(
-                Uint8Array.from(
-                    Buffer.from(
-                        runtime.getSetting("SOLANA_PRIVATE_KEY") ??
-                            runtime.getSetting("WALLET_PRIVATE_KEY")!, // should be the authority private key
-                        "base64"
-                    )
-                )
-            );
+            const { keypair: authority } = await getWalletKey(runtime, true);
 
             const daoMint = new PublicKey(runtime.getSetting("DAO_MINT")!); // DAO mint address
 
             // Derive PDAs
             const [statePDA] = await PublicKey.findProgramAddress(
                 [Buffer.from("state"), daoMint.toBuffer()],
-                authority.publicKey
+                authority!.publicKey
             );
 
             const [walletPDA] = await PublicKey.findProgramAddress(
                 [Buffer.from("wallet"), daoMint.toBuffer()],
-                authority.publicKey
+                authority!.publicKey
             );
 
             const quoteData = await getQuote(
@@ -110,14 +103,14 @@ export const executeSwapForDAO: Action = {
             const instructionData = Buffer.from(
                 JSON.stringify({
                     quote: quoteData.data,
-                    userPublicKey: authority.publicKey.toString(),
+                    userPublicKey: authority!.publicKey.toString(),
                     wrapAndUnwrapSol: true,
                 })
             );
 
             const txid = await invokeSwapDao(
                 connection,
-                authority,
+                authority!,
                 statePDA,
                 walletPDA,
                 instructionData

@@ -1,4 +1,5 @@
 import { Context, Telegraf } from "telegraf";
+import { message } from "telegraf/filters";
 import { IAgentRuntime, elizaLogger } from "@ai16z/eliza";
 import { MessageManager } from "./messageManager.ts";
 
@@ -43,8 +44,53 @@ export class TelegramClient {
         this.messageManager.bot = this.bot;
     }
 
+    private async isGroupAuthorized(ctx: Context): Promise<boolean> {
+        const config = this.runtime.character.clientConfig?.telegram;
+        if (ctx.from?.id === ctx.botInfo?.id) {
+            return false;
+        }
+
+        if (!config?.shouldOnlyJoinInAllowedGroups) {
+            return true;
+        }
+
+        const allowedGroups = config.allowedGroupIds || [];
+        const currentGroupId = ctx.chat.id.toString();
+
+        if (!allowedGroups.includes(currentGroupId)) {
+            elizaLogger.info(`Unauthorized group detected: ${currentGroupId}`);
+            try {
+                await ctx.reply("Not authorized. Leaving.");
+                await ctx.leaveChat();
+            } catch (error) {
+                elizaLogger.error(
+                    `Error leaving unauthorized group ${currentGroupId}:`,
+                    error
+                );
+            }
+            return false;
+        }
+
+        return true;
+    }
+
     private setupMessageHandlers(): void {
         elizaLogger.log("Setting up message handler...");
+
+        this.bot.on(message("new_chat_members"), async (ctx) => {
+            try {
+                const newMembers = ctx.message.new_chat_members;
+                const isBotAdded = newMembers.some(
+                    (member) => member.id === ctx.botInfo.id
+                );
+
+                if (isBotAdded && !(await this.isGroupAuthorized(ctx))) {
+                    return;
+                }
+            } catch (error) {
+                elizaLogger.error("Error handling new chat members:", error);
+            }
+        });
 
         this.bot.on("message", async (ctx) => {
             try {
@@ -61,9 +107,19 @@ export class TelegramClient {
                 await this.messageManager.handleMessage(ctx);
             } catch (error) {
                 elizaLogger.error("❌ Error handling message:", error);
-                await ctx.reply(
-                    "An error occurred while processing your message."
-                );
+                // Don't try to reply if we've left the group or been kicked
+                if (error?.response?.error_code !== 403) {
+                    try {
+                        await ctx.reply(
+                            "An error occurred while processing your message."
+                        );
+                    } catch (replyError) {
+                        elizaLogger.error(
+                            "Failed to send error message:",
+                            replyError
+                        );
+                    }
+                }
             }
         });
 
